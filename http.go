@@ -17,11 +17,16 @@ type Server struct {
 }
 
 func (s *Server) ListenAndServe() {
-	if s.Opts.TLSKeyFile != "" || s.Opts.TLSCertFile != "" {
-		s.ServeHTTPS()
-	} else {
-		s.ServeHTTP()
+	if s.Opts.HttpsAddress == "" && s.Opts.HttpAddress == "" {
+		log.Fatalf("FATAL: must specify https-address or http-address")
 	}
+	if s.Opts.HttpsAddress != "" {
+		go s.ServeHTTPS()
+	}
+	if s.Opts.HttpAddress != "" {
+		go s.ServeHTTP()
+	}
+	select {}
 }
 
 func (s *Server) ServeHTTP() {
