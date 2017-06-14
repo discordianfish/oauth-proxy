@@ -3,9 +3,6 @@ package main
 import (
 	"crypto"
 	"encoding/base64"
-	"github.com/18F/hmacauth"
-	"github.com/bitly/oauth2_proxy/providers"
-	"github.com/bmizerany/assert"
 	"io"
 	"io/ioutil"
 	"log"
@@ -17,6 +14,10 @@ import (
 	"strings"
 	"testing"
 	"time"
+
+	"github.com/18F/hmacauth"
+	"github.com/bitly/oauth2_proxy/providers"
+	"github.com/bmizerany/assert"
 )
 
 func init() {
@@ -82,6 +83,9 @@ func TestRobotsTxt(t *testing.T) {
 	opts.ClientSecret = "foobar"
 	opts.CookieSecret = "xyzzyplugh"
 	opts.Validate()
+	if err := opts.ValidateProvider(&providers.ProviderData{}); err != nil {
+		t.Fatal(err)
+	}
 
 	proxy := NewOAuthProxy(opts, func(string) bool { return true })
 	rw := httptest.NewRecorder()
@@ -374,6 +378,7 @@ func NewSignInPageTest() *SignInPageTest {
 	sip_test.opts.ClientID = "bazquux"
 	sip_test.opts.ClientSecret = "xyzzyplugh"
 	sip_test.opts.Validate()
+	sip_test.opts.ValidateProvider(&providers.ProviderData{})
 
 	sip_test.proxy = NewOAuthProxy(sip_test.opts, func(email string) bool {
 		return true
@@ -448,6 +453,7 @@ func NewProcessCookieTest(opts ProcessCookieTestOpts) *ProcessCookieTest {
 	// needed to encrypt the access_token.
 	pc_test.opts.CookieRefresh = time.Hour
 	pc_test.opts.Validate()
+	pc_test.opts.ValidateProvider(&providers.ProviderData{})
 
 	pc_test.proxy = NewOAuthProxy(pc_test.opts, func(email string) bool {
 		return pc_test.validate_user
@@ -617,6 +623,7 @@ func TestAuthOnlyEndpointSetXAuthRequestHeaders(t *testing.T) {
 	pc_test.opts = NewOptions()
 	pc_test.opts.SetXAuthRequest = true
 	pc_test.opts.Validate()
+	pc_test.opts.ValidateProvider(&providers.ProviderData{})
 
 	pc_test.proxy = NewOAuthProxy(pc_test.opts, func(email string) bool {
 		return pc_test.validate_user
@@ -655,6 +662,7 @@ func TestAuthSkippedForPreflightRequests(t *testing.T) {
 	opts.CookieSecret = "xyzzyplugh"
 	opts.SkipAuthPreflight = true
 	opts.Validate()
+	opts.ValidateProvider(&providers.ProviderData{})
 
 	upstream_url, _ := url.Parse(upstream.URL)
 	opts.provider = NewTestProvider(upstream_url, "")

@@ -3,19 +3,18 @@ package main
 import (
 	"crypto"
 	"crypto/tls"
-	"crypto/x509"
 	"encoding/base64"
 	"fmt"
 	"io/ioutil"
 	"net/http"
 	"net/url"
-	"os"
 	"regexp"
 	"strings"
 	"time"
 
 	"github.com/18F/hmacauth"
 	"github.com/bitly/oauth2_proxy/providers"
+	"github.com/bitly/oauth2_proxy/providers/openshift"
 )
 
 // Configuration Options that can be set by Command Line Flag, or Config File
@@ -31,23 +30,18 @@ type Options struct {
 	TLSKeyFile       string   `flag:"tls-key" cfg:"tls_key_file"`
 	TLSClientCAFiles []string `flag:"tls-client-ca" cfg:"tls_client_ca"`
 
-	AuthenticatedEmailsFile  string   `flag:"authenticated-emails-file" cfg:"authenticated_emails_file"`
-	AzureTenant              string   `flag:"azure-tenant" cfg:"azure_tenant"`
-	EmailDomains             []string `flag:"email-domain" cfg:"email_domains"`
-	GitHubOrg                string   `flag:"github-org" cfg:"github_org"`
-	GitHubTeam               string   `flag:"github-team" cfg:"github_team"`
-	GoogleGroups             []string `flag:"google-group" cfg:"google_group"`
-	GoogleAdminEmail         string   `flag:"google-admin-email" cfg:"google_admin_email"`
-	GoogleServiceAccountJSON string   `flag:"google-service-account-json" cfg:"google_service_account_json"`
-	OpenShiftGroup           string   `flag:"openshift-group" cfg:"openshift_group"`
-	OpenShiftSAR             string   `flag:"openshift-sar" cfg:"openshift_sar"`
-	OpenShiftCAs             []string `flag:"openshift-ca" cfg:"openshift_ca"`
-	OpenShiftReviewURL       string   `flag:"openshift-review-url" cfg:"openshift_review_url"`
-	OpenShiftClientCertCNs   []string `flag:"openshift-client-cert-cn" cfg:"openshift_client_cert_cn"`
-	HtpasswdFile             string   `flag:"htpasswd-file" cfg:"htpasswd_file"`
-	DisplayHtpasswdForm      bool     `flag:"display-htpasswd-form" cfg:"display_htpasswd_form"`
-	CustomTemplatesDir       string   `flag:"custom-templates-dir" cfg:"custom_templates_dir"`
-	Footer                   string   `flag:"footer" cfg:"footer"`
+	AuthenticatedEmailsFile string   `flag:"authenticated-emails-file" cfg:"authenticated_emails_file"`
+	EmailDomains            []string `flag:"email-domain" cfg:"email_domains"`
+	HtpasswdFile            string   `flag:"htpasswd-file" cfg:"htpasswd_file"`
+	DisplayHtpasswdForm     bool     `flag:"display-htpasswd-form" cfg:"display_htpasswd_form"`
+	CustomTemplatesDir      string   `flag:"custom-templates-dir" cfg:"custom_templates_dir"`
+	Footer                  string   `flag:"footer" cfg:"footer"`
+
+	OpenShiftDelegate  bool     `flag:"openshift-delegate" cfg:"openshift_delegate"`
+	OpenShiftSAR       string   `flag:"openshift-sar" cfg:"openshift_sar"`
+	OpenShiftCAs       []string `flag:"openshift-ca" cfg:"openshift_ca"`
+	OpenShiftReviewURL string   `flag:"openshift-review-url" cfg:"openshift_review_url"`
+	OpenShiftResources string   `flag:"openshift-resources" cfg:"openshift_resources"`
 
 	CookieName       string        `flag:"cookie-name" cfg:"cookie_name" env:"OAUTH2_PROXY_COOKIE_NAME"`
 	CookieSecret     string        `flag:"cookie-secret" cfg:"cookie_secret" env:"OAUTH2_PROXY_COOKIE_SECRET"`
@@ -91,8 +85,6 @@ type Options struct {
 	CompiledRegex []*regexp.Regexp
 	provider      providers.Provider
 	signatureData *SignatureData
-
-	clientCertValidate func(*x509.Certificate) (*providers.SessionState, error)
 }
 
 type SignatureData struct {
@@ -188,7 +180,6 @@ func (o *Options) Validate() error {
 		}
 		o.CompiledRegex = append(o.CompiledRegex, CompiledRegex)
 	}
-	msgs = parseProviderInfo(o, msgs)
 
 	if o.PassAccessToken || (o.CookieRefresh != time.Duration(0)) {
 		valid_cookie_secret_size := false
@@ -223,18 +214,6 @@ func (o *Options) Validate() error {
 			o.CookieExpire.String()))
 	}
 
-	if len(o.GoogleGroups) > 0 || o.GoogleAdminEmail != "" || o.GoogleServiceAccountJSON != "" {
-		if len(o.GoogleGroups) < 1 {
-			msgs = append(msgs, "missing setting: google-group")
-		}
-		if o.GoogleAdminEmail == "" {
-			msgs = append(msgs, "missing setting: google-admin-email")
-		}
-		if o.GoogleServiceAccountJSON == "" {
-			msgs = append(msgs, "missing setting: google-service-account-json")
-		}
-	}
-
 	if len(o.TLSClientCAFiles) > 0 && len(o.TLSKeyFile) == 0 && len(o.TLSCertFile) == 0 {
 		msgs = append(msgs, "tls-client-ca requires tls-key-file or tls-cert-file to be set to listen on tls")
 	}
@@ -256,42 +235,40 @@ func (o *Options) Validate() error {
 	return nil
 }
 
-func parseProviderInfo(o *Options, msgs []string) []string {
-	p := &providers.ProviderData{
+func (o *Options) ValidateProvider(provider providers.Provider) error {
+	var msgs []string
+	data := &providers.ProviderData{
 		Scope:          o.Scope,
 		ClientID:       o.ClientID,
 		ClientSecret:   o.ClientSecret,
 		ApprovalPrompt: o.ApprovalPrompt,
 	}
-	p.LoginURL, msgs = parseURL(o.LoginURL, "login", msgs)
-	p.RedeemURL, msgs = parseURL(o.RedeemURL, "redeem", msgs)
-	p.ProfileURL, msgs = parseURL(o.ProfileURL, "profile", msgs)
-	p.ValidateURL, msgs = parseURL(o.ValidateURL, "validate", msgs)
-	p.ProtectedResource, msgs = parseURL(o.ProtectedResource, "resource", msgs)
+	data.LoginURL, msgs = parseURL(o.LoginURL, "login", msgs)
+	data.RedeemURL, msgs = parseURL(o.RedeemURL, "redeem", msgs)
+	data.ProfileURL, msgs = parseURL(o.ProfileURL, "profile", msgs)
+	data.ValidateURL, msgs = parseURL(o.ValidateURL, "validate", msgs)
+	data.ProtectedResource, msgs = parseURL(o.ProtectedResource, "resource", msgs)
+	o.provider = provider
 
-	o.provider = providers.New(o.Provider, p)
-	switch p := o.provider.(type) {
-	case *providers.AzureProvider:
-		p.Configure(o.AzureTenant)
-	case *providers.GitHubProvider:
-		p.SetOrgTeam(o.GitHubOrg, o.GitHubTeam)
-	case *providers.OpenShiftProvider:
-		p.ReviewURL, msgs = parseURL(o.OpenShiftReviewURL, "openshift-review", msgs)
-		if err := p.Configure(o.OpenShiftGroup, o.OpenShiftSAR, o.OpenShiftCAs); err != nil {
-			msgs = append(msgs, fmt.Sprintf("unable to load OpenShift configuration: %v", err))
+	if len(msgs) != 0 {
+		return fmt.Errorf("Invalid provider configuration:\n  %s",
+			strings.Join(msgs, "\n  "))
+	}
+
+	switch p := provider.(type) {
+	case *openshift.OpenShiftProvider:
+		var reviewURL *url.URL
+		reviewURL, msgs = parseURL(o.OpenShiftReviewURL, "openshift-review", msgs)
+		if len(msgs) != 0 {
+			return fmt.Errorf("Invalid provider configuration:\n  %s",
+				strings.Join(msgs, "\n  "))
 		}
-		o.clientCertValidate = p.ClientCertVerification(o.OpenShiftClientCertCNs)
-	case *providers.GoogleProvider:
-		if o.GoogleServiceAccountJSON != "" {
-			file, err := os.Open(o.GoogleServiceAccountJSON)
-			if err != nil {
-				msgs = append(msgs, "invalid Google credentials file: "+o.GoogleServiceAccountJSON)
-			} else {
-				p.SetGroupRestriction(o.GoogleGroups, o.GoogleAdminEmail, file)
-			}
+		if err := p.Init(data, o.OpenShiftDelegate, reviewURL, o.OpenShiftSAR, o.OpenShiftResources, o.OpenShiftCAs); err != nil {
+			return fmt.Errorf("Unable to load OpenShift configuration: %v", err)
 		}
 	}
-	return msgs
+
+	return nil
 }
 
 func parseSignatureKey(o *Options, msgs []string) []string {

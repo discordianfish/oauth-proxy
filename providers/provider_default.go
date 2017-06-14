@@ -12,6 +12,10 @@ import (
 	"github.com/bitly/oauth2_proxy/cookie"
 )
 
+func (p *ProviderData) SetProviderData(data *ProviderData) {
+	*p = *data
+}
+
 func (p *ProviderData) Redeem(redirectURL, code string) (s *SessionState, err error) {
 	if code == "" {
 		err = errors.New("missing code")
@@ -110,6 +114,10 @@ func (p *ProviderData) GetEmailAddress(s *SessionState) (string, error) {
 // email group(s).
 func (p *ProviderData) ValidateGroup(email string) bool {
 	return true
+}
+
+func (p *ProviderData) ValidateRequest(_ *http.Request) (*SessionState, error) {
+	return nil, nil
 }
 
 func (p *ProviderData) ValidateSessionState(s *SessionState) bool {

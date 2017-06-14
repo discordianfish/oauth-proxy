@@ -10,6 +10,7 @@ import (
 	"time"
 
 	"github.com/BurntSushi/toml"
+	"github.com/bitly/oauth2_proxy/providers/openshift"
 	"github.com/mreiferson/go-options"
 )
 
@@ -20,8 +21,6 @@ func main() {
 	emailDomains := StringArray{}
 	upstreams := StringArray{}
 	skipAuthRegex := StringArray{}
-	googleGroups := StringArray{}
-	openshiftClientCertCNs := StringArray{}
 	openshiftCAs := StringArray{}
 	clientCAs := StringArray{}
 
@@ -47,17 +46,6 @@ func main() {
 	flagSet.Bool("ssl-insecure-skip-verify", false, "skip validation of certificates presented when using HTTPS")
 
 	flagSet.Var(&emailDomains, "email-domain", "authenticate emails with the specified domain (may be given multiple times). Use * to authenticate any email")
-	flagSet.String("azure-tenant", "common", "go to a tenant-specific or common (tenant-independent) endpoint.")
-	flagSet.String("github-org", "", "restrict logins to members of this organisation")
-	flagSet.String("github-team", "", "restrict logins to members of this team")
-	flagSet.Var(&googleGroups, "google-group", "restrict logins to members of this google group (may be given multiple times).")
-	flagSet.String("google-admin-email", "", "the google admin to impersonate for api calls")
-	flagSet.String("google-service-account-json", "", "the path to the service account json credentials")
-	flagSet.String("openshift-group", "", "restrict logins to members of this group (or groups, if encoded as a JSON array).")
-	flagSet.String("openshift-sar", "", "require this encoded subject access review to authorize (may be a JSON list).")
-	flagSet.Var(&openshiftClientCertCNs, "openshift-client-cert-cn", "allow clients that have a valid client certificate with the provided common name to access (may be given multiple times).")
-	flagSet.Var(&openshiftCAs, "openshift-ca", "paths to CA roots for the OpenShift API (may be given multiple times, defaults to /var/run/secrets/kubernetes.io/serviceaccount/ca.crt).")
-	flagSet.String("openshift-review-url", "", "Permission check endpoint (defaults to the subject access review endpoint)")
 	flagSet.String("client-id", "", "the OAuth Client ID: ie: \"123456.apps.googleusercontent.com\"")
 	flagSet.String("client-secret", "", "the OAuth Client Secret")
 	flagSet.String("client-secret-file", "", "a file containing the client-secret")
@@ -67,6 +55,13 @@ func main() {
 	flagSet.String("custom-templates-dir", "", "path to custom html templates")
 	flagSet.String("footer", "", "custom footer string. Use \"-\" to disable default footer.")
 	flagSet.String("proxy-prefix", "/oauth2", "the url root path that this proxy should be nested under (e.g. /<oauth2>/sign_in)")
+
+	flagSet.Bool("openshift-delegate", false, "check authentication and authorization with the OpenShift master on normal requests.")
+	flagSet.String("openshift-group", "", "restrict logins to members of this group (or groups, if encoded as a JSON array).")
+	flagSet.String("openshift-sar", "", "require this encoded subject access review to authorize (may be a JSON list).")
+	flagSet.Var(&openshiftCAs, "openshift-ca", "paths to CA roots for the OpenShift API (may be given multiple times, defaults to /var/run/secrets/kubernetes.io/serviceaccount/ca.crt).")
+	flagSet.String("openshift-review-url", "", "Permission check endpoint (defaults to the subject access review endpoint)")
+	flagSet.String("openshift-resources", "", "A JSON map of path prefixes to v1beta1.ResourceAttribute records to perform authorization checks for token or client cert access (e.g. {\"/\":{\"resource\":\"pods\",\"namespace\":\"default\",\"name\":\"test\"}} only allows users who can see the pod test in namespace default)")
 
 	flagSet.String("cookie-name", "_oauth2_proxy", "the name of the cookie that the oauth_proxy creates")
 	flagSet.String("cookie-secret", "", "the seed string for secure cookies (optionally base64 encoded)")
@@ -79,7 +74,7 @@ func main() {
 
 	flagSet.Bool("request-logging", true, "Log requests to stdout")
 
-	flagSet.String("provider", "google", "OAuth provider")
+	flagSet.String("provider", "openshift", "OAuth provider")
 	flagSet.String("login-url", "", "Authentication endpoint")
 	flagSet.String("redeem-url", "", "Token redemption endpoint")
 	flagSet.String("profile-url", "", "Profile access endpoint")
@@ -89,6 +84,9 @@ func main() {
 	flagSet.String("approval-prompt", "force", "OAuth approval_prompt")
 
 	flagSet.String("signature-key", "", "GAP-Signature request signature key (algorithm:secretkey)")
+
+	providerOpenShift := openshift.New()
+	providerOpenShift.Bind(flagSet)
 
 	flagSet.Parse(os.Args[1:])
 
@@ -114,6 +112,17 @@ func main() {
 		log.Printf("%s", err)
 		os.Exit(1)
 	}
+	switch opts.Provider {
+	case "openshift":
+		if err := opts.ValidateProvider(providerOpenShift); err != nil {
+			log.Printf("%s", err)
+			os.Exit(1)
+		}
+	default:
+		log.Printf("Invalid configuration: provider %q is not recognized", opts.Provider)
+		os.Exit(1)
+	}
+
 	validator := NewValidator(opts.EmailDomains, opts.AuthenticatedEmailsFile)
 	oauthproxy := NewOAuthProxy(opts, validator)
 
