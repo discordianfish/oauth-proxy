@@ -55,27 +55,25 @@ type OAuthProxy struct {
 	OAuthCallbackPath string
 	AuthOnlyPath      string
 
-	redirectURL             *url.URL // the url to receive requests at
-	provider                providers.Provider
-	ProxyPrefix             string
-	SignInMessage           string
-	HtpasswdFile            *HtpasswdFile
-	ClientCertVerifyOptions *x509.VerifyOptions
-	ClientCertValidate      func(*x509.Certificate) (*providers.SessionState, error)
-	DisplayHtpasswdForm     bool
-	serveMux                http.Handler
-	SetXAuthRequest         bool
-	PassBasicAuth           bool
-	SkipProviderButton      bool
-	PassUserHeaders         bool
-	BasicAuthPassword       string
-	PassAccessToken         bool
-	CookieCipher            *cookie.Cipher
-	skipAuthRegex           []string
-	skipAuthPreflight       bool
-	compiledRegex           []*regexp.Regexp
-	templates               *template.Template
-	Footer                  string
+	redirectURL         *url.URL // the url to receive requests at
+	provider            providers.Provider
+	ProxyPrefix         string
+	SignInMessage       string
+	HtpasswdFile        *HtpasswdFile
+	DisplayHtpasswdForm bool
+	serveMux            http.Handler
+	SetXAuthRequest     bool
+	PassBasicAuth       bool
+	SkipProviderButton  bool
+	PassUserHeaders     bool
+	BasicAuthPassword   string
+	PassAccessToken     bool
+	CookieCipher        *cookie.Cipher
+	skipAuthRegex       []string
+	skipAuthPreflight   bool
+	compiledRegex       []*regexp.Regexp
+	templates           *template.Template
+	Footer              string
 }
 
 type UpstreamProxy struct {
@@ -206,9 +204,6 @@ func NewOAuthProxy(opts *Options, validator func(string) bool) *OAuthProxy {
 		CookieExpire:   opts.CookieExpire,
 		CookieRefresh:  opts.CookieRefresh,
 		Validator:      validator,
-
-		ClientCertVerifyOptions: options,
-		ClientCertValidate:      opts.clientCertValidate,
 
 		RobotsPath:        "/robots.txt",
 		PingPath:          "/ping",
@@ -687,7 +682,7 @@ func (p *OAuthProxy) Authenticate(rw http.ResponseWriter, req *http.Request) int
 	}
 
 	if session == nil {
-		session, err = p.CheckTLSAuth(req)
+		session, err = p.CheckRequestAuth(req)
 		if err != nil {
 			log.Printf("%s %s", remoteAddr, err)
 		}
@@ -755,36 +750,7 @@ func (p *OAuthProxy) CheckBasicAuth(req *http.Request) (*providers.SessionState,
 	return nil, fmt.Errorf("%s not in HtpasswdFile", pair[0])
 }
 
-func (p *OAuthProxy) CheckTLSAuth(req *http.Request) (*providers.SessionState, error) {
-	if req.TLS == nil || len(req.TLS.PeerCertificates) == 0 {
-		return nil, nil
-	}
-	if p.ClientCertVerifyOptions == nil {
-		return nil, nil
-	}
-
-	// Use intermediates, if provided, and verify the certificate
-	opts := *p.ClientCertVerifyOptions
-	if opts.Intermediates == nil && len(req.TLS.PeerCertificates) > 1 {
-		opts.Intermediates = x509.NewCertPool()
-		for _, intermediate := range req.TLS.PeerCertificates[1:] {
-			opts.Intermediates.AddCert(intermediate)
-		}
-	}
-	client := req.TLS.PeerCertificates[0]
-	if _, err := client.Verify(opts); err != nil {
-		return nil, err
-	}
-
-	// email addresses can be verified if the CA is trusted
-	for _, email := range client.EmailAddresses {
-		if p.Validator(email) {
-			return &providers.SessionState{User: email, Email: email}, nil
-		}
-	}
-	if p.ClientCertValidate == nil {
-		return nil, nil
-	}
+func (p *OAuthProxy) CheckRequestAuth(req *http.Request) (*providers.SessionState, error) {
 	// handle advanced validation
-	return p.ClientCertValidate(req.TLS.PeerCertificates[0])
+	return p.provider.ValidateRequest(req)
 }
