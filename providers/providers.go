@@ -4,12 +4,11 @@ import (
 	"errors"
 	"net/http"
 
-	"github.com/bitly/oauth2_proxy/cookie"
+	"github.com/openshift/oauth-proxy/cookie"
 )
 
 type Provider interface {
 	Data() *ProviderData
-	SetProviderData(*ProviderData)
 
 	GetEmailAddress(*SessionState) (string, error)
 	Redeem(string, string) (*SessionState, error)

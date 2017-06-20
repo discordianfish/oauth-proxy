@@ -8,7 +8,7 @@ import (
 	"testing"
 	"time"
 
-	"github.com/bitly/oauth2_proxy/providers"
+	"github.com/openshift/oauth-proxy/providers"
 	"github.com/bmizerany/assert"
 )
 

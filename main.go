@@ -10,8 +10,9 @@ import (
 	"time"
 
 	"github.com/BurntSushi/toml"
-	"github.com/bitly/oauth2_proxy/providers/openshift"
 	"github.com/mreiferson/go-options"
+	"github.com/openshift/oauth-proxy/providers"
+	"github.com/openshift/oauth-proxy/providers/openshift"
 )
 
 func main() {
@@ -28,11 +29,11 @@ func main() {
 	showVersion := flagSet.Bool("version", false, "print version string")
 
 	flagSet.String("http-address", "127.0.0.1:4180", "[http://]<addr>:<port> or unix://<path> to listen on for HTTP clients")
-	flagSet.String("https-address", ":443", "<addr>:<port> to listen on for HTTPS clients")
+	flagSet.String("https-address", ":8443", "<addr>:<port> to listen on for HTTPS clients")
 	flagSet.String("tls-cert", "", "path to certificate file")
 	flagSet.String("tls-key", "", "path to private key file")
 	flagSet.Var(&clientCAs, "tls-client-ca", "paths to CA roots for trusted client certificates for admitting clients (may be given multiple times).")
-	flagSet.String("redirect-url", "", "the OAuth Redirect URL. ie: \"https://internalapp.yourcompany.com/oauth2/callback\"")
+	flagSet.String("redirect-url", "", "the OAuth Redirect URL. ie: \"https://internalapp.yourcompany.com/oauth/callback\"")
 	flagSet.Bool("set-xauthrequest", false, "set X-Auth-Request-User and X-Auth-Request-Email response headers (useful in Nginx auth_request mode)")
 	flagSet.Var(&upstreams, "upstream", "the http url(s) of the upstream endpoint or file:// paths for static files. Routing is based on the path")
 	flagSet.Bool("pass-basic-auth", true, "pass HTTP Basic Auth, X-Forwarded-User and X-Forwarded-Email information to upstream")
@@ -54,16 +55,16 @@ func main() {
 	flagSet.Bool("display-htpasswd-form", true, "display username / password login form if an htpasswd file is provided")
 	flagSet.String("custom-templates-dir", "", "path to custom html templates")
 	flagSet.String("footer", "", "custom footer string. Use \"-\" to disable default footer.")
-	flagSet.String("proxy-prefix", "/oauth2", "the url root path that this proxy should be nested under (e.g. /<oauth2>/sign_in)")
+	flagSet.String("proxy-prefix", "/oauth", "the url root path that this proxy should be nested under (e.g. /<oauth2>/sign_in)")
 
-	flagSet.Bool("openshift-delegate", false, "check authentication and authorization with the OpenShift master on normal requests.")
 	flagSet.String("openshift-group", "", "restrict logins to members of this group (or groups, if encoded as a JSON array).")
 	flagSet.String("openshift-sar", "", "require this encoded subject access review to authorize (may be a JSON list).")
 	flagSet.Var(&openshiftCAs, "openshift-ca", "paths to CA roots for the OpenShift API (may be given multiple times, defaults to /var/run/secrets/kubernetes.io/serviceaccount/ca.crt).")
 	flagSet.String("openshift-review-url", "", "Permission check endpoint (defaults to the subject access review endpoint)")
-	flagSet.String("openshift-resources", "", "A JSON map of path prefixes to v1beta1.ResourceAttribute records to perform authorization checks for token or client cert access (e.g. {\"/\":{\"resource\":\"pods\",\"namespace\":\"default\",\"name\":\"test\"}} only allows users who can see the pod test in namespace default)")
+	flagSet.String("openshift-delegate-urls", "", "If set, perform delegated authorization against the OpenShift API server. Value is a JSON map of path prefixes to v1beta1.ResourceAttribute records that must be granted to the user to continue. E.g. {\"/\":{\"resource\":\"pods\",\"namespace\":\"default\",\"name\":\"test\"}} only allows users who can see the pod test in namespace default.")
+	flagSet.String("openshift-service-account", "", "An optional name of an OpenShift service account to act as. If set, the injected service account info will be used to determine the client ID and client secret.")
 
-	flagSet.String("cookie-name", "_oauth2_proxy", "the name of the cookie that the oauth_proxy creates")
+	flagSet.String("cookie-name", "_oauth_proxy", "the name of the cookie that the oauth_proxy creates")
 	flagSet.String("cookie-secret", "", "the seed string for secure cookies (optionally base64 encoded)")
 	flagSet.String("cookie-secret-file", "", "a file containing a cookie-secret")
 	flagSet.String("cookie-domain", "", "an optional cookie domain to force cookies to (ie: .yourcompany.com)*")
@@ -78,7 +79,6 @@ func main() {
 	flagSet.String("login-url", "", "Authentication endpoint")
 	flagSet.String("redeem-url", "", "Token redemption endpoint")
 	flagSet.String("profile-url", "", "Profile access endpoint")
-	flagSet.String("resource", "", "The resource that is protected (Azure AD only)")
 	flagSet.String("validate-url", "", "Access token validation endpoint")
 	flagSet.String("scope", "", "OAuth scope specification")
 	flagSet.String("approval-prompt", "force", "OAuth approval_prompt")
@@ -107,19 +107,18 @@ func main() {
 	cfg.LoadEnvForStruct(opts)
 	options.Resolve(opts, flagSet, cfg)
 
-	err := opts.Validate()
-	if err != nil {
-		log.Printf("%s", err)
-		os.Exit(1)
-	}
+	var p providers.Provider
 	switch opts.Provider {
 	case "openshift":
-		if err := opts.ValidateProvider(providerOpenShift); err != nil {
-			log.Printf("%s", err)
-			os.Exit(1)
-		}
+		p = providerOpenShift
 	default:
 		log.Printf("Invalid configuration: provider %q is not recognized", opts.Provider)
+		os.Exit(1)
+	}
+
+	err := opts.Validate(p)
+	if err != nil {
+		log.Printf("%s", err)
 		os.Exit(1)
 	}
 
