@@ -18,7 +18,7 @@ import (
 	"time"
 
 	"github.com/bitly/go-simplejson"
-	"github.com/bitly/oauth2_proxy/providers"
+	"github.com/openshift/oauth-proxy/providers"
 
 	"k8s.io/apiserver/pkg/authentication/authenticator"
 	"k8s.io/apiserver/pkg/authorization/authorizer"
@@ -39,12 +39,11 @@ type OpenShiftProvider struct {
 	AuthenticationOptions DelegatingAuthenticationOptions
 	AuthorizationOptions  DelegatingAuthorizationOptions
 
-	authenticator  authenticator.Request
-	authorizer     authorizer.Authorizer
-	defaultRecord  authorizer.AttributesRecord
-	requiredGroups []string
-	reviews        []string
-	paths          recordsByPath
+	authenticator authenticator.Request
+	authorizer    authorizer.Authorizer
+	defaultRecord authorizer.AttributesRecord
+	reviews       []string
+	paths         recordsByPath
 }
 
 func New() *OpenShiftProvider {
@@ -61,59 +60,65 @@ func (p *OpenShiftProvider) Bind(flags *flag.FlagSet) {
 	p.AuthorizationOptions.AddFlags(flags)
 }
 
-func (p *OpenShiftProvider) SetGroupRestriction(group string) {
-	if len(group) == 0 {
-		return
-	}
-	var extensions []json.RawMessage
-	if err := json.Unmarshal([]byte(group), &extensions); err == nil {
-		for _, ext := range extensions {
-			p.requiredGroups = append(p.requiredGroups, string(ext))
+// LoadDefaults accepts configuration and loads defaults from the environment, or returns an error.
+// The provider may partially initialize config for subsequent calls.
+func (p *OpenShiftProvider) LoadDefaults(serviceAccount string, caPaths []string, reviewJSON, resources string) (*providers.ProviderData, error) {
+	if len(resources) > 0 {
+		paths, err := parseResources(resources)
+		if err != nil {
+			return nil, err
 		}
-		return
+		p.paths = paths
 	}
-	p.requiredGroups = []string{group}
-}
-
-func (p *OpenShiftProvider) SetSubjectAccessReviews(review string) {
-	if len(review) == 0 {
-		return
-	}
-	json, err := simplejson.NewJson([]byte(review))
+	reviews, err := parseSubjectAccessReviews(reviewJSON)
 	if err != nil {
-		log.Printf("Unable to decode review: %v", err)
-		p.reviews = []string{review}
-		return
+		return nil, err
+	}
+	p.reviews = reviews
+
+	if len(caPaths) == 0 {
+		// ignore errors
+		p.SetCA([]string{"/var/run/secrets/kubernetes.io/serviceaccount/ca.crt"})
+	} else {
+		if err := p.SetCA(caPaths); err != nil {
+			return nil, err
+		}
 	}
 
-	if json.MustMap() != nil {
-		if len(json.Get("scopes").MustArray()) == 0 {
-			json.Set("scopes", []interface{}{})
-		}
-		data, err := json.EncodePretty()
-		if err != nil {
-			log.Printf("Unable to encode modified review: %v (%#v)", err, json)
-			p.reviews = []string{review}
-			return
-		}
-		p.reviews = []string{string(data)}
-		return
+	defaults := &providers.ProviderData{
+		Scope: "user:info user:check-access",
 	}
 
-	for i := range json.MustArray() {
-		if len(json.GetIndex(i).Get("scopes").MustArray()) == 0 {
-			json.GetIndex(i).Set("scopes", []interface{}{})
+	// all OpenShift service accounts are OAuth clients, use this if we have it
+	if len(serviceAccount) > 0 {
+		if data, err := ioutil.ReadFile("/var/run/secrets/kubernetes.io/serviceaccount/namespace"); err == nil && len(data) > 0 {
+			defaults.ClientID = fmt.Sprintf("system:serviceaccount:%s:%s", strings.TrimSpace(string(data)), serviceAccount)
+			log.Printf("Defaulting client-id to %s", defaults.ClientID)
 		}
-		data, err := json.EncodePretty()
-		if err != nil {
-			log.Printf("Unable to encode modified review: %v (%#v)", err, json)
-			p.reviews = []string{review}
-			return
+		tokenPath := "/var/run/secrets/kubernetes.io/serviceaccount/token"
+		if data, err := ioutil.ReadFile(tokenPath); err == nil && len(data) > 0 {
+			defaults.ClientSecret = strings.TrimSpace(string(data))
+			log.Printf("Defaulting client-secret to service account token %s", tokenPath)
 		}
-		p.reviews = append(p.reviews, string(data))
 	}
+
+	// attempt to discover endpoints
+	if err := discoverOpenShiftOAuth(defaults, p.Client); err != nil {
+		log.Printf("Unable to discover default cluster OAuth info: %v", err)
+		return defaults, nil
+	}
+	// provide default URLs
+	if !emptyURL(defaults.LoginURL) {
+		defaults.ValidateURL = &url.URL{
+			Scheme: defaults.LoginURL.Scheme,
+			Host:   defaults.LoginURL.Host,
+			Path:   "/apis/user.openshift.io/v1/users/~",
+		}
+	}
+	return defaults, nil
 }
 
+// SetCA initializes the client used for connecting to the master.
 func (p *OpenShiftProvider) SetCA(paths []string) error {
 	if p.Client == nil {
 		p.Client = &http.Client{
@@ -148,6 +153,41 @@ func (p *OpenShiftProvider) SetCA(paths []string) error {
 	return nil
 }
 
+// parseSubjectAccessReviews parses a list of SAR records and ensures they are properly scoped.
+func parseSubjectAccessReviews(review string) ([]string, error) {
+	if len(review) == 0 {
+		return nil, nil
+	}
+	json, err := simplejson.NewJson([]byte(review))
+	if err != nil {
+		return nil, fmt.Errorf("unable to decode review: %v", err)
+	}
+
+	if json.MustMap() != nil {
+		if len(json.Get("scopes").MustArray()) == 0 {
+			json.Set("scopes", []interface{}{})
+		}
+		data, err := json.EncodePretty()
+		if err != nil {
+			return nil, fmt.Errorf("unable to encode modified review: %v (%#v)", err, json)
+		}
+		return []string{string(data)}, nil
+	}
+
+	var reviews []string
+	for i := range json.MustArray() {
+		if len(json.GetIndex(i).Get("scopes").MustArray()) == 0 {
+			json.GetIndex(i).Set("scopes", []interface{}{})
+		}
+		data, err := json.EncodePretty()
+		if err != nil {
+			return nil, fmt.Errorf("unable to encode modified review: %v (%#v)", err, json)
+		}
+		reviews = append(reviews, string(data))
+	}
+	return reviews, nil
+}
+
 type pathRecord struct {
 	path   string
 	record authorizer.AttributesRecord
@@ -175,7 +215,10 @@ func (o recordsByPath) Match(path string) (pathRecord, bool) {
 	return pathRecord{}, false
 }
 
-func parseResources(resources string, reviews string) (recordsByPath, error) {
+// parseResources creates a map of path prefixes (the keys in the provided input) to
+// SubjectAccessReview ResourceAttributes (the keys) and returns the records ordered
+// by longest path first, or an error.
+func parseResources(resources string) (recordsByPath, error) {
 	defaults := authorizer.AttributesRecord{
 		Verb:            "proxy",
 		ResourceRequest: true,
@@ -217,55 +260,13 @@ func parseResources(resources string, reviews string) (recordsByPath, error) {
 	return paths, nil
 }
 
-func (p *OpenShiftProvider) Init(data *providers.ProviderData, allowDelegation bool, reviewURL *url.URL, reviews, resources string, caPaths []string) error {
-	p.SetSubjectAccessReviews(reviews)
-
+// Complete performs final setup on the provider or returns an error.
+func (p *OpenShiftProvider) Complete(data *providers.ProviderData, reviewURL *url.URL) error {
 	p.ProviderData = data
-	if len(p.Scope) == 0 {
-		p.Scope = "user:info user:check-access"
-	}
-
 	p.ReviewURL = reviewURL
-	if len(caPaths) == 0 {
-		// ignore errors
-		p.SetCA([]string{"/var/run/secrets/kubernetes.io/serviceaccount/ca.crt"})
-	} else {
-		if err := p.SetCA(caPaths); err != nil {
-			return err
-		}
-	}
 
-	// attempt to discover endpoints as if we are in cluster
-	if emptyURL(p.LoginURL) && emptyURL(p.RedeemURL) {
-		if err := discoverOpenShiftOAuth(p); err != nil {
-			return fmt.Errorf("discovery failed: %v", err)
-		}
-	}
-	// provide default URLs
-	if !emptyURL(p.LoginURL) {
-		if emptyURL(p.ValidateURL) {
-			p.ValidateURL = &url.URL{
-				Scheme: p.LoginURL.Scheme,
-				Host:   p.LoginURL.Host,
-				Path:   "/apis/user.openshift.io/v1/users/~",
-			}
-		}
-		if emptyURL(p.ReviewURL) {
-			p.ReviewURL = &url.URL{
-				Scheme: p.LoginURL.Scheme,
-				Host:   p.LoginURL.Host,
-				Path:   "/apis/authorization.openshift.io/v1/subjectaccessreviews",
-			}
-		}
-	}
-
-	if allowDelegation {
-		log.Printf("Delegation of authentication and authorization to OpenShift is enabled.")
-		paths, err := parseResources(resources, reviews)
-		if err != nil {
-			return err
-		}
-		p.paths = paths
+	if len(p.paths) > 0 {
+		log.Printf("Delegation of authentication and authorization to OpenShift is enabled for bearer tokens and client certificates.")
 
 		authenticator, err := p.AuthenticationOptions.ToAuthenticationConfig()
 		if err != nil {
@@ -322,6 +323,13 @@ func (p *OpenShiftProvider) ValidateRequest(req *http.Request) (*providers.Sessi
 		return nil, nil
 	}
 
+	// find a match
+	record, ok := p.paths.Match(req.URL.Path)
+	if !ok {
+		log.Printf("no resource mapped path")
+		return nil, nil
+	}
+
 	// authenticate
 	user, ok, err := p.authenticator.AuthenticateRequest(req)
 	if err != nil {
@@ -332,11 +340,6 @@ func (p *OpenShiftProvider) ValidateRequest(req *http.Request) (*providers.Sessi
 	}
 
 	// authorize
-	record, ok := p.paths.Match(req.URL.Path)
-	if !ok {
-		log.Printf("no resource mapped path")
-		return nil, nil
-	}
 	record.record.User = user
 	ok, reason, err := p.authorizer.Authorize(record.record)
 	if err != nil {
@@ -366,17 +369,6 @@ func (p *OpenShiftProvider) GetEmailAddress(s *providers.SessionState) (string, 
 	}
 	if !strings.Contains(name, "@") {
 		name = name + "@cluster.local"
-	}
-	if len(p.requiredGroups) > 0 {
-		for _, group := range json.Get("groups").MustStringArray() {
-			for _, require := range p.requiredGroups {
-				if group == require {
-					return name, nil
-				}
-			}
-		}
-		log.Printf("Permission denied for %s - not in any of the required groups %v", name, p.requiredGroups)
-		return "", providers.ErrPermissionDenied
 	}
 	if err := p.reviewUser(name, s.AccessToken); err != nil {
 		return "", err
@@ -479,7 +471,7 @@ func (p *OpenShiftProvider) Redeem(redirectURL, code string) (s *providers.Sessi
 	return
 }
 
-func discoverOpenShiftOAuth(provider *OpenShiftProvider) error {
+func discoverOpenShiftOAuth(provider *providers.ProviderData, client *http.Client) error {
 	host := os.Getenv("KUBERNETES_SERVICE_HOST")
 	if len(host) == 0 {
 		host = "kubernetes.default.svc"
@@ -490,7 +482,7 @@ func discoverOpenShiftOAuth(provider *OpenShiftProvider) error {
 	if err != nil {
 		return err
 	}
-	json, err := request(provider.Client, req)
+	json, err := request(client, req)
 	if err != nil {
 		return err
 	}

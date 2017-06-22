@@ -1,153 +1,186 @@
-oauth2_proxy
-=================
+OpenShift oauth-proxy
+=====================
 
-A reverse proxy and static file server that provides authentication using Providers (Google, GitHub, and others)
-to validate accounts by email, domain or group.
+A reverse proxy and static file server that provides authentication and authorization to an OpenShift OAuth
+server or Kubernetes master supporting the 1.6+ remote authorization endpoints to validate access to content.
+It is intended for use within OpenShift clusters to make it easy to run both end-user and infrastructure
+services that don't provide their own authentication.
 
-[![Build Status](https://secure.travis-ci.org/bitly/oauth2_proxy.png?branch=master)](http://travis-ci.org/bitly/oauth2_proxy)
+Features:
 
+* Performs zero-configuration OAuth when run as a pod in OpenShift
+* Able to perform simple authorization checks against the OpenShift and Kubernetes RBAC policy engine to grant access
+* May also be configured to check bearer tokens or Kubernetes client certificates and verify access
+* On OpenShift 3.6+ clusters, supports zero-configuration end-to-end TLS via the out of the box router
+
+This is a fork of the https://github.com/openshift/oauth-proxy project with other providers removed (for now). It's
+focused on providing the simplest possible secure proxy on OpenShift
 
 ![Sign In Page](https://cloud.githubusercontent.com/assets/45028/4970624/7feb7dd8-6886-11e4-93e0-c9904af44ea8.png)
+
+## Using this proxy with OpenShift
+
+This proxy is best used as a sidecar container in a Kubernetes pod, protecting another server that listens
+only on localhost. On an OpenShift cluster, it can use the service account token as an OAuth client secret
+to identify the current user and perform access control checks. For example:
+
+    $ ./oauth2_proxy --upstream=http://localhost:8080 --cookie-secret=SECRET \
+          --openshift-service-account=default --https-address=
+
+will start the proxy against localhost:8080, encrypt the login cookie with SECRET, use the default
+service account in the current namespace, and only listen on http.
+
+A full sidecar example is in [contrib/sidecar.yaml](contrib/sidecar.yaml) which also demonstrates using
+OpenShift TLS service serving certificates (giving you an automatic in-cluster cert) with an external route.
+Run against a 3.6+ cluster with:
+
+    $ oc create -f https://raw.githubusercontent.com/openshift/oauth-proxy/master/contrib/sidecar.yaml
+
+The OpenShift provider defaults to allowing any user that can log into the OpenShift cluster - the following
+sections cover more on restricting access.
+
+### Limiting access to users
+
+While you can use the `--email-domains` and `--authenticated-emails-file` to match users directly,
+the proxy works best when you delegate authorization to the OpenShift master by specifying what permissions
+you expect the user to have. This allows you to leverage OpenShift RBAC and groups to map users to
+permissions centrally.
+
+#### Require specific permissions to login via OAuth with `--openshift-sar=JSON`
+
+SAR stands for "Subject Access Review", which is a request sent to the OpenShift or Kubernetes server
+to check the access for a particular user. Expects a single subject access review JSON object, or
+a JSON array, all of which must be satisfied for a user to be able to access the backend server.
+
+Pros:
+
+* Easiest way to protect an entire website or API with an OAuth flow
+* Requires no additional permissions to be granted for the proxy service account
+
+Cons:
+
+* Not well suited for service-to-service access
+* All-or-nothing protection for the upstream server
+
+Example:
+
+    # Allows access if the user can view the service 'proxy' in namespace 'app-dev'
+    --openshift-sar='{"namespace":"app-dev","resource":"services","name":"proxy","verb":"get"}'
+
+A user who visits the proxy will be redirected to an OAuth login with OpenShift, and must grant
+access to the proxy to view their user info and request permissions for them. Once they have granted
+that right to the proxy, it will check whether the user has the required permissions. If they do 
+not, they'll be given a permission denied error. If they are, they'll be logged in via a cookie.
+
+Run `oc explain subjectaccessreview` to see the schema for a review, including other fields.
+Specifying multiple rules via a JSON array (`[{...}, {...}]`) will require all permissions to
+be granted.
+
+
+#### Delegate authentication and authorization to OpenShift for infrastructure
+
+OpenShift leverages bearer tokens for end users and for service accounts. When running
+infrastructure services, it may be easier to delegate all authentication and authoration to
+the master. The `--openshift-delegate-urls=JSON` flag enables delegation, asking the master
+to validate any incoming requests with an `Authorization: Bearer` header or client certificate
+to be forwarded to the master for verification. If the user authenticates, they are then
+checked against one of the entries in the provided map
+
+The value of the flag is a JSON map of path prefixes to `v1beta1.ResourceAttributes`, and the 
+longest path prefix is checked. If no path matches the request, authentication and authorization
+are skipped.
+
+Pros:
+
+* Allow other OpenShift service accounts or infrastructure components to authorize to specific APIs
+
+Cons:
+
+* Not suited for web browser use
+* Should not be used by untrusted components (can steal tokens)
+
+Example:
+
+    # Allows access if the provided bearer token has view permission on a custom resource
+    --openshift-delegated-urls='{"/":{"group":"custom.group","resource":"myproxy""verb":"get"}}'
+
+    # Grant access only to paths under /api
+    --openshift-delegated-urls='{"/api":{"group":"custom.group","resource":"myproxy""verb":"get"}}'
+
+WARNING: Because users are sending their own credentials to the proxy, it's important to use this 
+setting only when the proxy is under control of the cluster administrators. Otherwise, end users 
+may be unwittingly provide their credentials to untrusted components that can then act as them.
+
+
+### Other configuration flags
+
+#### `--openshift-service-account=NAME`
+
+Will attempt to read the `--client-id` and `--client-secret` from the service account information 
+injected by OpenShift. Uses the value of `/var/run/secrets/kubernetes.io/serviceaccount/namespace`
+to build the correct `--client-id`, and the contents of 
+`/var/run/secrets/kubernetes.io/serviceaccount/token` as the `--client-secret`.
+
+#### `--openshift-ca`
+
+One or more paths to CA certificates that should be used when connecting to the OpenShift master.
+If none are provided, the proxy will default to using `/var/run/secrets/kubernetes.io/serviceaccount/ca.crt`.
+
+
+### Discovering the OAuth configuration of an OpenShift cluster
+
+OpenShift supports the `/.well-known/oauth-authorization-server` endpoint, which returns a JSON document
+describing the authorize and token URLs, as well as the default scopes. If you are running outside
+of OpenShift you can specify these flags directly using the existing flags for these URLs.
+
+
+### Configuring the proxy's service account in OpenShift
+
+In order for service accounts to be used as OAuth clients, they must have the [proper OAuth annotations set](https://docs.openshift.org/latest/architecture/additional_concepts/authentication.html#service-accounts-as-oauth-clients).
+to point to a valid external URL. In most cases, this can be a route exposing the service fronting your
+proxy. We recommend using a `Reencrypt` type route and [service serving certs](https://docs.openshift.org/latest/dev_guide/secrets.html#service-serving-certificate-secrets) to maximize end to end
+security. See [contrib/sidecar.yaml](contrib/sidecar.yaml) for an example of these used in concert. 
+
+By default, the redirect URI of a service account set up as an OAuth client must point to an HTTPS endpoint which
+is a common configuration error.
+
+
+## Developing
+
+To build, ensure you are running Go 1.7+ and clone the repo:
+
+```
+$ go get -u github.com/openshift/oauth-proxy
+$ cd $GOPATH/src/github.com/openshift/oauth-proxy
+```
+
+To build, run:
+
+```
+$ go test .
+```
+
+The docker images for this repository are built by [the OpenShift release process](https://github.com/openshift/release/blob/master/projects/oauth-proxy/pipeline.yaml) and are available at
+
+```
+$ docker pull registry.svc.ci.openshift.org/ci/oauth-proxy:v1
+```
+
 
 ## Architecture
 
 ![OAuth2 Proxy Architecture](https://cloud.githubusercontent.com/assets/45028/8027702/bd040b7a-0d6a-11e5-85b9-f8d953d04f39.png)
 
-## Installation
-
-1. Download [Prebuilt Binary](https://github.com/bitly/oauth2_proxy/releases) (current release is `v2.2`) or build with `$ go get github.com/bitly/oauth2_proxy` which will put the binary in `$GOROOT/bin`
-2. Select a Provider and Register an OAuth Application with a Provider
-3. Configure OAuth2 Proxy using config file, command line options, or environment variables
-4. Configure SSL or Deploy behind a SSL endpoint (example provided for Nginx)
-
-## OAuth Provider Configuration
-
-You will need to register an OAuth application with a Provider (Google, GitHub or another provider), and configure it with Redirect URI(s) for the domain you intend to run `oauth2_proxy` on.
-
-Valid providers are :
-
-* [Google](#google-auth-provider) *default*
-* [Azure](#azure-auth-provider)
-* [Facebook](#facebook-auth-provider)
-* [GitHub](#github-auth-provider)
-* [GitLab](#gitlab-auth-provider)
-* [LinkedIn](#linkedin-auth-provider)
-* [MyUSA](#myusa-auth-provider)
-
-The provider can be selected using the `provider` configuration value.
-
-### Google Auth Provider
-
-For Google, the registration steps are:
-
-1. Create a new project: https://console.developers.google.com/project
-2. Choose the new project from the top right project dropdown (only if another project is selected)
-3. In the project Dashboard center pane, choose **"Enable and manage APIs"**
-4. In the left Nav pane, choose **"Credentials"**
-5. In the center pane, choose **"OAuth consent screen"** tab. Fill in **"Product name shown to users"** and hit save.
-6. In the center pane, choose **"Credentials"** tab.
-   * Open the **"New credentials"** drop down
-   * Choose **"OAuth client ID"**
-   * Choose **"Web application"**
-   * Application name is freeform, choose something appropriate
-   * Authorized JavaScript origins is your domain ex: `https://internal.yourcompany.com`
-   * Authorized redirect URIs is the location of oath2/callback ex: `https://internal.yourcompany.com/oauth2/callback`
-   * Choose **"Create"**
-4. Take note of the **Client ID** and **Client Secret**
-
-It's recommended to refresh sessions on a short interval (1h) with `cookie-refresh` setting which validates that the account is still authorized.
-
-#### Restrict auth to specific Google groups on your domain. (optional)
-
-1. Create a service account: https://developers.google.com/identity/protocols/OAuth2ServiceAccount and make sure to download the json file.
-2. Make note of the Client ID for a future step.
-3. Under "APIs & Auth", choose APIs.
-4. Click on Admin SDK and then Enable API.
-5. Follow the steps on https://developers.google.com/admin-sdk/directory/v1/guides/delegation#delegate_domain-wide_authority_to_your_service_account and give the client id from step 2 the following oauth scopes:
-```
-https://www.googleapis.com/auth/admin.directory.group.readonly
-https://www.googleapis.com/auth/admin.directory.user.readonly
-```
-6. Follow the steps on https://support.google.com/a/answer/60757 to enable Admin API access.
-7. Create or choose an existing administrative email address on the Gmail domain to assign to the ```google-admin-email``` flag. This email will be impersonated by this client to make calls to the Admin SDK. See the note on the link from step 5 for the reason why.
-8. Create or choose an existing email group and set that email to the ```google-group``` flag. You can pass multiple instances of this flag with different groups
-and the user will be checked against all the provided groups.
-9. Lock down the permissions on the json file downloaded from step 1 so only oauth2_proxy is able to read the file and set the path to the file in the ```google-service-account-json``` flag.
-10. Restart oauth2_proxy.
-
-Note: The user is checked against the group members list on initial authentication and every time the token is refreshed ( about once an hour ).
-
-### Azure Auth Provider
-
-1. [Add an application](https://azure.microsoft.com/en-us/documentation/articles/active-directory-integrating-applications/) to your Azure Active Directory tenant.
-2. On the App properties page provide the correct Sign-On URL ie `https://internal.yourcompany.com/oauth2/callback`
-3. If applicable take note of your `TenantID` and provide it via the `--azure-tenant=<YOUR TENANT ID>` commandline option. Default the `common` tenant is used.
-
-The Azure AD auth provider uses `openid` as it default scope. It uses `https://graph.windows.net` as a default protected resource. It call to `https://graph.windows.net/me` to get the email address of the user that logs in.
-
-
-### Facebook Auth Provider
-
-1. Create a new FB App from <https://developers.facebook.com/>
-2. Under FB Login, set your Valid OAuth redirect URIs to `https://internal.yourcompany.com/oauth2/callback`
-
-### GitHub Auth Provider
-
-1. Create a new project: https://github.com/settings/developers
-2. Under `Authorization callback URL` enter the correct url ie `https://internal.yourcompany.com/oauth2/callback`
-
-The GitHub auth provider supports two additional parameters to restrict authentication to Organization or Team level access. Restricting by org and team is normally accompanied with `--email-domain=*`
-
-    -github-org="": restrict logins to members of this organisation
-    -github-team="": restrict logins to members of any of these teams, separated by a comma
-
-If you are using GitHub enterprise, make sure you set the following to the appropriate url:
-
-    -login-url="http(s)://<enterprise github host>/login/oauth/authorize"
-    -redeem-url="http(s)://<enterprise github host>/login/oauth/access_token"
-    -validate-url="http(s)://<enterprise github host>/api/v3"
-
-### GitLab Auth Provider
-
-Whether you are using GitLab.com or self-hosting GitLab, follow [these steps to add an application](http://doc.gitlab.com/ce/integration/oauth_provider.html)
-
-If you are using self-hosted GitLab, make sure you set the following to the appropriate URL:
-
-    -login-url="<your gitlab url>/oauth/authorize"
-    -redeem-url="<your gitlab url>/oauth/token"
-    -validate-url="<your gitlab url>/api/v3/user"
-
-
-### LinkedIn Auth Provider
-
-For LinkedIn, the registration steps are:
-
-1. Create a new project: https://www.linkedin.com/secure/developer
-2. In the OAuth User Agreement section:
-   * In default scope, select r_basicprofile and r_emailaddress.
-   * In "OAuth 2.0 Redirect URLs", enter `https://internal.yourcompany.com/oauth2/callback`
-3. Fill in the remaining required fields and Save.
-4. Take note of the **Consumer Key / API Key** and **Consumer Secret / Secret Key**
-
-### MyUSA Auth Provider
-
-The [MyUSA](https://alpha.my.usa.gov) authentication service ([GitHub](https://github.com/18F/myusa))
-
-### Microsoft Azure AD Provider
-
-For adding an application to the Microsoft Azure AD follow [these steps to add an application](https://azure.microsoft.com/en-us/documentation/articles/active-directory-integrating-applications/).
-
-Take note of your `TenantId` if applicable for your situation. The `TenantId` can be used to override the default `common` authorization server with a tenant specific server.
-
-## Email Authentication
-
-To authorize by email domain use `--email-domain=yourcompany.com`. To authorize individual email addresses use `--authenticated-emails-file=/path/to/file` with one email per line. To authorize all email addresses use `--email-domain=*`.
 
 ## Configuration
 
-`oauth2_proxy` can be configured via [config file](#config-file), [command line options](#command-line-options) or [environment variables](#environment-variables).
+`oauth-proxy` can be configured via [config file](#config-file), [command line options](#command-line-options) or [environment variables](#environment-variables).
 
 To generate a strong cookie secret use `python -c 'import os,base64; print base64.b64encode(os.urandom(16))'`
+
+### Email Authentication
+
+To authorize by email domain use `--email-domain=yourcompany.com`. To authorize individual email addresses use `--authenticated-emails-file=/path/to/file` with one email per line. To authorize all email addresses use `--email-domain=*`.
 
 ### Config File
 
@@ -159,7 +192,6 @@ An example [oauth2_proxy.cfg](contrib/oauth2_proxy.cfg.example) config file is i
 Usage of oauth2_proxy:
   -approval-prompt string: OAuth approval_prompt (default "force")
   -authenticated-emails-file string: authenticate against emails via file (one per line)
-  -azure-tenant string: go to a tenant-specific or common (tenant-independent) endpoint. (default "common")
   -basic-auth-password string: the password to set when passing the HTTP Basic Auth header
   -client-id string: the OAuth Client ID: ie: "123456.apps.googleusercontent.com"
   -client-secret string: the OAuth Client Secret
@@ -175,11 +207,6 @@ Usage of oauth2_proxy:
   -display-htpasswd-form: display username / password login form if an htpasswd file is provided (default true)
   -email-domain value: authenticate emails with the specified domain (may be given multiple times). Use * to authenticate any email
   -footer string: custom footer string. Use "-" to disable default footer.
-  -github-org string: restrict logins to members of this organisation
-  -github-team string: restrict logins to members of this team
-  -google-admin-email string: the google admin to impersonate for api calls
-  -google-group value: restrict logins to members of this google group (may be given multiple times).
-  -google-service-account-json string: the path to the service account json credentials
   -htpasswd-file string: additionally authenticate against a htpasswd file. Entries must be created with "htpasswd -s" for SHA encryption
   -http-address string: [http://]<addr>:<port> or unix://<path> to listen on for HTTP clients (default "127.0.0.1:4180")
   -https-address string: <addr>:<port> to listen on for HTTPS clients (default ":443")
@@ -190,11 +217,10 @@ Usage of oauth2_proxy:
   -pass-user-headers: pass X-Forwarded-User and X-Forwarded-Email information to upstream (default true)
   -profile-url string: Profile access endpoint
   -provider string: OAuth provider (default "google")
-  -proxy-prefix string: the url root path that this proxy should be nested under (e.g. /<oauth2>/sign_in) (default "/oauth2")
+  -proxy-prefix string: the url root path that this proxy should be nested under (e.g. /<oauth2>/sign_in) (default "/oauth")
   -redeem-url string: Token redemption endpoint
   -redirect-url string: the OAuth Redirect URL. ie: "https://internalapp.yourcompany.com/oauth2/callback"
   -request-logging: Log requests to stdout (default true)
-  -resource string: The resource that is protected (Azure AD only)
   -scope string: OAuth scope specification
   -set-xauthrequest: set X-Auth-Request-User and X-Auth-Request-Email response headers (useful in Nginx auth_request mode)
   -signature-key string: GAP-Signature request signature key (algorithm:secretkey)
@@ -211,7 +237,7 @@ Usage of oauth2_proxy:
 
 See below for provider specific options
 
-### Upstreams Configuration
+### Upstream Configuration
 
 `oauth2_proxy` supports having multiple upstreams, and has the option to pass requests on to HTTP(S) servers or serve static files from the file system. HTTP and HTTPS upstreams are configured by providing a URL such as `http://127.0.0.1:8080/` for the upstream parameter, that will forward all authenticated requests to be forwarded to the upstream server. If you instead provide `http://127.0.0.1:8080/some/path/` then it will only be requests that start with `/some/path/` which are forwarded to the upstream.
 
@@ -336,13 +362,6 @@ OAuth2 Proxy logs requests to stdout in a format similar to Apache Combined Log.
 ```
 <REMOTE_ADDRESS> - <user@domain.com> [19/Mar/2015:17:20:19 -0400] <HOST_HEADER> GET <UPSTREAM_HOST> "/path/" HTTP/1.1 "<USER_AGENT>" <RESPONSE_CODE> <RESPONSE_BYTES> <REQUEST_DURATION>
 ```
-
-## Adding a new Provider
-
-Follow the examples in the [`providers` package](providers/) to define a new
-`Provider` instance. Add a new `case` to
-[`providers.New()`](providers/providers.go) to allow `oauth2_proxy` to use the
-new `Provider`.
 
 ## <a name="nginx-auth-request"></a>Configuring for use with the Nginx `auth_request` directive
 

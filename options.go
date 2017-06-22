@@ -13,8 +13,8 @@ import (
 	"time"
 
 	"github.com/18F/hmacauth"
-	"github.com/bitly/oauth2_proxy/providers"
-	"github.com/bitly/oauth2_proxy/providers/openshift"
+	"github.com/openshift/oauth-proxy/providers"
+	"github.com/openshift/oauth-proxy/providers/openshift"
 )
 
 // Configuration Options that can be set by Command Line Flag, or Config File
@@ -37,11 +37,11 @@ type Options struct {
 	CustomTemplatesDir      string   `flag:"custom-templates-dir" cfg:"custom_templates_dir"`
 	Footer                  string   `flag:"footer" cfg:"footer"`
 
-	OpenShiftDelegate  bool     `flag:"openshift-delegate" cfg:"openshift_delegate"`
-	OpenShiftSAR       string   `flag:"openshift-sar" cfg:"openshift_sar"`
-	OpenShiftCAs       []string `flag:"openshift-ca" cfg:"openshift_ca"`
-	OpenShiftReviewURL string   `flag:"openshift-review-url" cfg:"openshift_review_url"`
-	OpenShiftResources string   `flag:"openshift-resources" cfg:"openshift_resources"`
+	OpenShiftSAR            string   `flag:"openshift-sar" cfg:"openshift_sar"`
+	OpenShiftReviewURL      string   `flag:"openshift-review-url" cfg:"openshift_review_url"`
+	OpenShiftCAs            []string `flag:"openshift-ca" cfg:"openshift_ca"`
+	OpenShiftServiceAccount string   `flag:"openshift-service-account" cfg:"openshift_service_account"`
+	OpenShiftDelegateURLs   string   `flag:"openshift-delegate-urls" cfg:"openshift_delegate_urls"`
 
 	CookieName       string        `flag:"cookie-name" cfg:"cookie_name" env:"OAUTH2_PROXY_COOKIE_NAME"`
 	CookieSecret     string        `flag:"cookie-secret" cfg:"cookie_secret" env:"OAUTH2_PROXY_COOKIE_SECRET"`
@@ -66,14 +66,13 @@ type Options struct {
 
 	// These options allow for other providers besides Google, with
 	// potential overrides.
-	Provider          string `flag:"provider" cfg:"provider"`
-	LoginURL          string `flag:"login-url" cfg:"login_url"`
-	RedeemURL         string `flag:"redeem-url" cfg:"redeem_url"`
-	ProfileURL        string `flag:"profile-url" cfg:"profile_url"`
-	ProtectedResource string `flag:"resource" cfg:"resource"`
-	ValidateURL       string `flag:"validate-url" cfg:"validate_url"`
-	Scope             string `flag:"scope" cfg:"scope"`
-	ApprovalPrompt    string `flag:"approval-prompt" cfg:"approval_prompt"`
+	Provider       string `flag:"provider" cfg:"provider"`
+	LoginURL       string `flag:"login-url" cfg:"login_url"`
+	RedeemURL      string `flag:"redeem-url" cfg:"redeem_url"`
+	ProfileURL     string `flag:"profile-url" cfg:"profile_url"`
+	ValidateURL    string `flag:"validate-url" cfg:"validate_url"`
+	Scope          string `flag:"scope" cfg:"scope"`
+	ApprovalPrompt string `flag:"approval-prompt" cfg:"approval_prompt"`
 
 	RequestLogging bool `flag:"request-logging" cfg:"request_logging"`
 
@@ -123,8 +122,41 @@ func parseURL(to_parse string, urltype string, msgs []string) (*url.URL, []strin
 	return parsed, msgs
 }
 
-func (o *Options) Validate() error {
+func (o *Options) Validate(p providers.Provider) error {
 	msgs := make([]string, 0)
+
+	// allow the provider to default some values
+	switch provider := p.(type) {
+	case *openshift.OpenShiftProvider:
+		defaults, err := provider.LoadDefaults(o.OpenShiftServiceAccount, o.OpenShiftCAs, o.OpenShiftSAR, o.OpenShiftDelegateURLs)
+		if err != nil {
+			return err
+		}
+		if len(o.ClientID) == 0 {
+			o.ClientID = defaults.ClientID
+		}
+		if len(o.ClientSecret) == 0 {
+			o.ClientSecret = defaults.ClientSecret
+		}
+		if len(o.Scope) == 0 {
+			o.Scope = defaults.Scope
+		}
+		if len(o.LoginURL) == 0 && defaults.LoginURL != nil {
+			o.LoginURL = defaults.LoginURL.String()
+		}
+		if len(o.RedeemURL) == 0 && defaults.RedeemURL != nil {
+			o.RedeemURL = defaults.RedeemURL.String()
+		}
+		if len(o.ValidateURL) == 0 && defaults.ValidateURL != nil {
+			o.ValidateURL = defaults.ValidateURL.String()
+		}
+		if len(o.EmailDomains) == 0 {
+			o.EmailDomains = []string{"*"}
+		}
+		if len(o.RedirectURL) == 0 {
+			o.RedirectURL = "https:///"
+		}
+	}
 
 	if o.CookieSecretFile != "" {
 		if contents, err := ioutil.ReadFile(o.CookieSecretFile); err != nil {
@@ -228,14 +260,17 @@ func (o *Options) Validate() error {
 		http.DefaultClient = &http.Client{Transport: insecureTransport}
 	}
 
+	msgs = append(msgs, o.validateProvider(p)...)
 	if len(msgs) != 0 {
 		return fmt.Errorf("Invalid configuration:\n  %s",
 			strings.Join(msgs, "\n  "))
 	}
+	o.provider = p
+
 	return nil
 }
 
-func (o *Options) ValidateProvider(provider providers.Provider) error {
+func (o *Options) validateProvider(provider providers.Provider) []string {
 	var msgs []string
 	data := &providers.ProviderData{
 		Scope:          o.Scope,
@@ -247,12 +282,8 @@ func (o *Options) ValidateProvider(provider providers.Provider) error {
 	data.RedeemURL, msgs = parseURL(o.RedeemURL, "redeem", msgs)
 	data.ProfileURL, msgs = parseURL(o.ProfileURL, "profile", msgs)
 	data.ValidateURL, msgs = parseURL(o.ValidateURL, "validate", msgs)
-	data.ProtectedResource, msgs = parseURL(o.ProtectedResource, "resource", msgs)
-	o.provider = provider
-
 	if len(msgs) != 0 {
-		return fmt.Errorf("Invalid provider configuration:\n  %s",
-			strings.Join(msgs, "\n  "))
+		return msgs
 	}
 
 	switch p := provider.(type) {
@@ -260,15 +291,13 @@ func (o *Options) ValidateProvider(provider providers.Provider) error {
 		var reviewURL *url.URL
 		reviewURL, msgs = parseURL(o.OpenShiftReviewURL, "openshift-review", msgs)
 		if len(msgs) != 0 {
-			return fmt.Errorf("Invalid provider configuration:\n  %s",
-				strings.Join(msgs, "\n  "))
+			return msgs
 		}
-		if err := p.Init(data, o.OpenShiftDelegate, reviewURL, o.OpenShiftSAR, o.OpenShiftResources, o.OpenShiftCAs); err != nil {
-			return fmt.Errorf("Unable to load OpenShift configuration: %v", err)
+		if err := p.Complete(data, reviewURL); err != nil {
+			msgs = append(msgs, fmt.Sprintf("unable to load OpenShift configuration: %v", err))
 		}
 	}
-
-	return nil
+	return msgs
 }
 
 func parseSignatureKey(o *Options, msgs []string) []string {

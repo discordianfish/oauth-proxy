@@ -9,12 +9,8 @@ import (
 	"net/http"
 	"net/url"
 
-	"github.com/bitly/oauth2_proxy/cookie"
+	"github.com/openshift/oauth-proxy/cookie"
 )
-
-func (p *ProviderData) SetProviderData(data *ProviderData) {
-	*p = *data
-}
 
 func (p *ProviderData) Redeem(redirectURL, code string) (s *SessionState, err error) {
 	if code == "" {
