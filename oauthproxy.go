@@ -266,6 +266,9 @@ func (p *OAuthProxy) redeemCode(host, code string) (s *providers.SessionState, e
 
 	if s.Email == "" {
 		s.Email, err = p.provider.GetEmailAddress(s)
+		if err != nil {
+			err = fmt.Errorf("unable to update email from user info: %v", err)
+		}
 	}
 	return
 }
@@ -548,7 +551,7 @@ func (p *OAuthProxy) OAuthCallback(rw http.ResponseWriter, req *http.Request) {
 			p.ErrorPage(rw, 403, "Permission Denied", "Invalid Account")
 			return
 		}
-		log.Printf("%s error redeeming code %s", remoteAddr, err)
+		log.Printf("error redeeming code (client:%s): %s", remoteAddr, err)
 		p.ErrorPage(rw, 500, "Internal Error", "Internal Error")
 		return
 	}
