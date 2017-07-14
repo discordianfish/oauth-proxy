@@ -266,9 +266,6 @@ func (p *OAuthProxy) redeemCode(host, code string) (s *providers.SessionState, e
 
 	if s.Email == "" {
 		s.Email, err = p.provider.GetEmailAddress(s)
-		if err != nil {
-			err = fmt.Errorf("unable to update email from user info: %v", err)
-		}
 	}
 	return
 }
