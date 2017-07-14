@@ -367,16 +367,16 @@ func (p *OpenShiftProvider) GetEmailAddress(s *providers.SessionState) (string, 
 	req, err := http.NewRequest("GET", p.ValidateURL.String(), nil)
 	if err != nil {
 		log.Printf("failed building request %s", err)
-		return "", err
+		return "", fmt.Errorf("unable to build request to get user email info: %v", err)
 	}
 	req.Header.Set("Authorization", fmt.Sprintf("Bearer %s", s.AccessToken))
 	json, err := request(p.Client, req)
 	if err != nil {
-		return "", err
+		return "", fmt.Errorf("unable to retrieve email address for user from token: %v", err)
 	}
 	name, err := json.Get("metadata").Get("name").String()
 	if err != nil {
-		return "", err
+		return "", fmt.Errorf("user information has no name field: %v", err)
 	}
 	if !strings.Contains(name, "@") {
 		name = name + "@cluster.local"
