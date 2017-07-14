@@ -262,6 +262,17 @@ func parseResources(resources string) (recordsByPath, error) {
 
 // Complete performs final setup on the provider or returns an error.
 func (p *OpenShiftProvider) Complete(data *providers.ProviderData, reviewURL *url.URL) error {
+	if emptyURL(reviewURL) {
+		if emptyURL(data.LoginURL) {
+			return fmt.Errorf("--openshift-review-url must be specified")
+		}
+		reviewURL = &url.URL{
+			Scheme: data.LoginURL.Scheme,
+			Host:   data.LoginURL.Host,
+			Path:   "/apis/authorization.openshift.io/v1/subjectaccessreviews",
+		}
+	}
+
 	p.ProviderData = data
 	p.ReviewURL = reviewURL
 
