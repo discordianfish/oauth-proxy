@@ -4,6 +4,7 @@ import (
 	"flag"
 	"fmt"
 	"log"
+	"net/http"
 	"os"
 	"runtime"
 	"strings"
@@ -142,8 +143,12 @@ func main() {
 		}
 	}
 
+	var h http.Handler = oauthproxy
+	if opts.RequestLogging {
+		h = LoggingHandler(os.Stdout, h, true)
+	}
 	s := &Server{
-		Handler: LoggingHandler(os.Stdout, oauthproxy, opts.RequestLogging),
+		Handler: h,
 		Opts:    opts,
 	}
 	s.ListenAndServe()
