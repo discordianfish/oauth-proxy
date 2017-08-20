@@ -74,7 +74,7 @@ func main() {
 	flagSet.Bool("cookie-secure", true, "set secure (HTTPS) cookie flag")
 	flagSet.Bool("cookie-httponly", true, "set HttpOnly cookie flag")
 
-	flagSet.Bool("request-logging", true, "Log requests to stdout")
+	flagSet.Bool("request-logging", false, "Log requests to stdout")
 
 	flagSet.String("provider", "openshift", "OAuth provider")
 	flagSet.String("login-url", "", "Authentication endpoint")
