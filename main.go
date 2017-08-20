@@ -30,6 +30,7 @@ func main() {
 
 	flagSet.String("http-address", "127.0.0.1:4180", "[http://]<addr>:<port> or unix://<path> to listen on for HTTP clients")
 	flagSet.String("https-address", ":8443", "<addr>:<port> to listen on for HTTPS clients")
+	flagSet.Duration("upstream-flush", time.Duration(5)*time.Millisecond, "force flush upstream responses after this duration(useful for streaming responses). 0 to never force flush. Defaults to 5ms")
 	flagSet.String("tls-cert", "", "path to certificate file")
 	flagSet.String("tls-key", "", "path to private key file")
 	flagSet.Var(&clientCAs, "tls-client-ca", "paths to CA roots for trusted client certificates for admitting clients (may be given multiple times).")
