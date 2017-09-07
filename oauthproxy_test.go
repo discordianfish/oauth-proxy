@@ -16,8 +16,9 @@ import (
 	"time"
 
 	"github.com/18F/hmacauth"
-	"github.com/openshift/oauth-proxy/providers"
 	"github.com/bmizerany/assert"
+
+	"github.com/openshift/oauth-proxy/providers"
 )
 
 func init() {
@@ -38,7 +39,7 @@ func TestNewReverseProxy(t *testing.T) {
 	backendHost := net.JoinHostPort(backendHostname, backendPort)
 	proxyURL, _ := url.Parse(backendURL.Scheme + "://" + backendHost + "/")
 
-	proxyHandler := NewReverseProxy(proxyURL)
+	proxyHandler := NewReverseProxy(proxyURL, 5*time.Millisecond)
 	setProxyUpstreamHostHeader(proxyHandler, proxyURL)
 	frontend := httptest.NewServer(proxyHandler)
 	defer frontend.Close()
@@ -60,7 +61,7 @@ func TestEncodedSlashes(t *testing.T) {
 	defer backend.Close()
 
 	b, _ := url.Parse(backend.URL)
-	proxyHandler := NewReverseProxy(b)
+	proxyHandler := NewReverseProxy(b, 5*time.Millisecond)
 	setProxyDirector(proxyHandler)
 	frontend := httptest.NewServer(proxyHandler)
 	defer frontend.Close()
@@ -82,8 +83,9 @@ func TestRobotsTxt(t *testing.T) {
 	opts.ClientID = "bazquux"
 	opts.ClientSecret = "foobar"
 	opts.CookieSecret = "xyzzyplugh"
-	opts.Validate()
-	if err := opts.ValidateProvider(&providers.ProviderData{}); err != nil {
+	opts.Upstreams = []string{"http://localhost:0"}
+	opts.EmailDomains = []string{"*"}
+	if err := opts.Validate(&testProvider{}); err != nil {
 		t.Fatal(err)
 	}
 
@@ -158,11 +160,14 @@ func TestBasicAuthPassword(t *testing.T) {
 	opts.CookieSecret = "xyzzyplughxyzzyplughxyzzyplughxp"
 	opts.ClientID = "bazquux"
 	opts.ClientSecret = "foobar"
+	opts.EmailDomains = []string{"*"}
 	opts.CookieSecure = false
 	opts.PassBasicAuth = true
 	opts.PassUserHeaders = true
 	opts.BasicAuthPassword = "This is a secure password"
-	opts.Validate()
+	if err := opts.Validate(&testProvider{}); err != nil {
+		t.Fatal(err)
+	}
 
 	provider_url, _ := url.Parse(provider_server.URL)
 	const email_address = "michael.bland@gsa.gov"
@@ -252,9 +257,12 @@ func NewPassAccessTokenTest(opts PassAccessTokenTestOptions) *PassAccessTokenTes
 	t.opts.CookieSecret = "xyzzyplughxyzzyplughxyzzyplughxp"
 	t.opts.ClientID = "bazquux"
 	t.opts.ClientSecret = "foobar"
+	t.opts.EmailDomains = []string{"*"}
 	t.opts.CookieSecure = false
 	t.opts.PassAccessToken = opts.PassAccessToken
-	t.opts.Validate()
+	if err := t.opts.Validate(&testProvider{}); err != nil {
+		panic(err)
+	}
 
 	provider_url, _ := url.Parse(t.provider_server.URL)
 	const email_address = "michael.bland@gsa.gov"
@@ -373,13 +381,7 @@ const signInRedirectPattern = `<input type="hidden" name="rd" value="(.*)">`
 func NewSignInPageTest() *SignInPageTest {
 	var sip_test SignInPageTest
 
-	sip_test.opts = NewOptions()
-	sip_test.opts.CookieSecret = "foobar"
-	sip_test.opts.ClientID = "bazquux"
-	sip_test.opts.ClientSecret = "xyzzyplugh"
-	sip_test.opts.Validate()
-	sip_test.opts.ValidateProvider(&providers.ProviderData{})
-
+	sip_test.opts = testOptions()
 	sip_test.proxy = NewOAuthProxy(sip_test.opts, func(email string) bool {
 		return true
 	})
@@ -446,14 +448,17 @@ func NewProcessCookieTest(opts ProcessCookieTestOpts) *ProcessCookieTest {
 	var pc_test ProcessCookieTest
 
 	pc_test.opts = NewOptions()
+	pc_test.opts.Upstreams = []string{"http://localhost:8080"}
+	pc_test.opts.EmailDomains = []string{"*"}
 	pc_test.opts.ClientID = "bazquux"
 	pc_test.opts.ClientSecret = "xyzzyplugh"
 	pc_test.opts.CookieSecret = "0123456789abcdefabcd"
 	// First, set the CookieRefresh option so proxy.AesCipher is created,
 	// needed to encrypt the access_token.
 	pc_test.opts.CookieRefresh = time.Hour
-	pc_test.opts.Validate()
-	pc_test.opts.ValidateProvider(&providers.ProviderData{})
+	if err := pc_test.opts.Validate(&testProvider{}); err != nil {
+		panic(err)
+	}
 
 	pc_test.proxy = NewOAuthProxy(pc_test.opts, func(email string) bool {
 		return pc_test.validate_user
@@ -620,10 +625,8 @@ func TestAuthOnlyEndpointUnauthorizedOnEmailValidationFailure(t *testing.T) {
 func TestAuthOnlyEndpointSetXAuthRequestHeaders(t *testing.T) {
 	var pc_test ProcessCookieTest
 
-	pc_test.opts = NewOptions()
+	pc_test.opts = testOptions()
 	pc_test.opts.SetXAuthRequest = true
-	pc_test.opts.Validate()
-	pc_test.opts.ValidateProvider(&providers.ProviderData{})
 
 	pc_test.proxy = NewOAuthProxy(pc_test.opts, func(email string) bool {
 		return pc_test.validate_user
@@ -656,13 +659,15 @@ func TestAuthSkippedForPreflightRequests(t *testing.T) {
 	defer upstream.Close()
 
 	opts := NewOptions()
-	opts.Upstreams = append(opts.Upstreams, upstream.URL)
+	opts.Upstreams = []string{upstream.URL}
+	opts.EmailDomains = []string{"*"}
 	opts.ClientID = "bazquux"
 	opts.ClientSecret = "foobar"
 	opts.CookieSecret = "xyzzyplugh"
 	opts.SkipAuthPreflight = true
-	opts.Validate()
-	opts.ValidateProvider(&providers.ProviderData{})
+	if err := opts.Validate(&testProvider{}); err != nil {
+		panic(err)
+	}
 
 	upstream_url, _ := url.Parse(upstream.URL)
 	opts.provider = NewTestProvider(upstream_url, "")
@@ -758,7 +763,7 @@ func (fnc *fakeNetConn) Read(p []byte) (n int, err error) {
 }
 
 func (st *SignatureTest) MakeRequestWithExpectedKey(method, body, key string) {
-	err := st.opts.Validate()
+	err := st.opts.Validate(&testProvider{})
 	if err != nil {
 		panic(err)
 	}

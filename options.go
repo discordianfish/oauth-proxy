@@ -194,6 +194,7 @@ func (o *Options) Validate(p providers.Provider) error {
 
 	o.redirectURL, msgs = parseURL(o.RedirectURL, "redirect", msgs)
 
+	o.proxyURLs = nil
 	for _, u := range o.Upstreams {
 		upstreamURL, err := url.Parse(u)
 		if err != nil {
@@ -299,6 +300,15 @@ func (o *Options) validateProvider(provider providers.Provider) []string {
 		if err := p.Complete(data, reviewURL); err != nil {
 			msgs = append(msgs, fmt.Sprintf("unable to load OpenShift configuration: %v", err))
 		}
+	case *providers.ProviderData:
+		p.Scope = data.Scope
+		p.ClientID = data.ClientID
+		p.ClientSecret = data.ClientSecret
+		p.ApprovalPrompt = data.ApprovalPrompt
+		p.LoginURL = data.LoginURL
+		p.RedeemURL = data.RedeemURL
+		p.ProfileURL = data.ProfileURL
+		p.ValidateURL = data.ValidateURL
 	}
 	return msgs
 }
