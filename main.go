@@ -5,6 +5,7 @@ import (
 	"fmt"
 	"log"
 	"net/http"
+	_ "net/http/pprof"
 	"os"
 	"runtime"
 	"strings"
@@ -47,6 +48,7 @@ func main() {
 	flagSet.Bool("skip-provider-button", false, "will skip sign-in-page to directly reach the next step: oauth/start")
 	flagSet.Bool("skip-auth-preflight", false, "will skip authentication for OPTIONS requests")
 	flagSet.Bool("ssl-insecure-skip-verify", false, "skip validation of certificates presented when using HTTPS")
+	flagSet.String("debug-address", "", "[http://]<addr>:<port> or unix://<path> to listen on for debug and requests")
 
 	flagSet.Var(&emailDomains, "email-domain", "authenticate emails with the specified domain (may be given multiple times). Use * to authenticate any email")
 	flagSet.String("client-id", "", "the OAuth Client ID: ie: \"123456.apps.googleusercontent.com\"")
@@ -142,6 +144,14 @@ func main() {
 		if err != nil {
 			log.Fatalf("FATAL: unable to open %s %s", opts.HtpasswdFile, err)
 		}
+	}
+
+	if opts.DebugAddress != "" {
+		mux := http.NewServeMux()
+		mux.Handle("/debug/pprof/", http.DefaultServeMux)
+		go func() {
+			log.Fatalf("FATAL: unable to serve debug %s: %v", opts.DebugAddress, http.ListenAndServe(opts.DebugAddress, mux))
+		}()
 	}
 
 	var h http.Handler = oauthproxy
