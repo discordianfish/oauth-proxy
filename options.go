@@ -98,7 +98,7 @@ func NewOptions() *Options {
 		ProxyPrefix:         "/oauth2",
 		HttpAddress:         "127.0.0.1:4180",
 		HttpsAddress:        ":443",
-		UpstreamFlush:       time.Duration(5)*time.Millisecond,
+		UpstreamFlush:       time.Duration(5) * time.Millisecond,
 		DisplayHtpasswdForm: true,
 		CookieName:          "_oauth2_proxy",
 		CookieSecure:        true,
