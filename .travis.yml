@@ -1,12 +1,15 @@
 language: go
+
 go:
-  - 1.7.5
-  - 1.8.1
+  - 1.8
+
+install:
+  - echo "Skip go get"
 script:
-  - curl -s https://raw.githubusercontent.com/pote/gpm/v1.4.0/bin/gpm > gpm
-  - chmod +x gpm
-  - ./gpm install
-  - ./test.sh
-sudo: false
+  - go build .
+  - go test .
+
 notifications:
-  email: false
+  irc: "chat.freenode.net#openshift-dev"
+
+sudo: false
