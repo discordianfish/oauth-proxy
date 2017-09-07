@@ -221,7 +221,7 @@ func NewOAuthProxy(opts *Options, validator func(string) bool) *OAuthProxy {
 		Validator:      validator,
 
 		RobotsPath:        "/robots.txt",
-		PingPath:          "/ping",
+		PingPath:          fmt.Sprintf("%s/healthz", opts.ProxyPrefix),
 		SignInPath:        fmt.Sprintf("%s/sign_in", opts.ProxyPrefix),
 		SignOutPath:       fmt.Sprintf("%s/sign_out", opts.ProxyPrefix),
 		OAuthStartPath:    fmt.Sprintf("%s/start", opts.ProxyPrefix),
