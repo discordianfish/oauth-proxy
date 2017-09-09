@@ -16,6 +16,8 @@ import (
 	"strings"
 	"time"
 
+	"golang.org/x/net/http2"
+
 	"github.com/18F/hmacauth"
 	"github.com/openshift/oauth-proxy/cookie"
 	"github.com/openshift/oauth-proxy/providers"
@@ -91,11 +93,22 @@ func (u *UpstreamProxy) ServeHTTP(w http.ResponseWriter, r *http.Request) {
 	u.handler.ServeHTTP(w, r)
 }
 
-func NewReverseProxy(target *url.URL, UpstreamFlush time.Duration) (proxy *httputil.ReverseProxy) {
+func NewReverseProxy(target *url.URL, upstreamFlush time.Duration) (proxy *httputil.ReverseProxy) {
 	proxy = httputil.NewSingleHostReverseProxy(target)
-	proxy.FlushInterval = UpstreamFlush
+	proxy.FlushInterval = upstreamFlush
+
+	transport := &http.Transport{
+		MaxIdleConnsPerHost: 500,
+		IdleConnTimeout:     1 * time.Minute,
+	}
+	if err := http2.ConfigureTransport(transport); err != nil {
+		log.Printf("WARN: Failed to configure http2 transport: %v", err)
+	}
+	proxy.Transport = transport
+
 	return proxy
 }
+
 func setProxyUpstreamHostHeader(proxy *httputil.ReverseProxy, target *url.URL) {
 	director := proxy.Director
 	proxy.Director = func(req *http.Request) {
@@ -138,8 +151,7 @@ func NewOAuthProxy(opts *Options, validator func(string) bool) *OAuthProxy {
 			} else {
 				setProxyDirector(proxy)
 			}
-			serveMux.Handle(path,
-				&UpstreamProxy{u.Host, proxy, auth})
+			serveMux.Handle(path, &UpstreamProxy{u.Host, proxy, auth})
 		case "file":
 			if u.Fragment != "" {
 				path = u.Fragment
@@ -208,7 +220,7 @@ func NewOAuthProxy(opts *Options, validator func(string) bool) *OAuthProxy {
 		Validator:      validator,
 
 		RobotsPath:        "/robots.txt",
-		PingPath:          "/ping",
+		PingPath:          fmt.Sprintf("%s/healthz", opts.ProxyPrefix),
 		SignInPath:        fmt.Sprintf("%s/sign_in", opts.ProxyPrefix),
 		SignOutPath:       fmt.Sprintf("%s/sign_out", opts.ProxyPrefix),
 		OAuthStartPath:    fmt.Sprintf("%s/start", opts.ProxyPrefix),
