@@ -1,4 +1,4 @@
-## OAuth2 Proxy Config File
+## Oauth-Proxy Config File
 ## https://github.com/openshift/oauth-proxy
 
 ## <addr>:<port> to listen on for HTTP/HTTPS clients
