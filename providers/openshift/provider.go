@@ -3,7 +3,6 @@ package openshift
 import (
 	"bytes"
 	"crypto/tls"
-	"crypto/x509"
 	"encoding/json"
 	"errors"
 	"flag"
@@ -19,6 +18,7 @@ import (
 
 	"github.com/bitly/go-simplejson"
 	"github.com/openshift/oauth-proxy/providers"
+	"github.com/openshift/oauth-proxy/util"
 
 	"k8s.io/apiserver/pkg/authentication/authenticator"
 	"k8s.io/apiserver/pkg/authorization/authorizer"
@@ -126,24 +126,9 @@ func (p *OpenShiftProvider) SetCA(paths []string) error {
 			Transport: http.DefaultTransport,
 		}
 	}
-
-	pool, err := x509.SystemCertPool()
+	pool, err := util.GetCertPool(paths)
 	if err != nil {
 		return err
-	}
-	// if no system certs exist
-	if pool == nil {
-		log.Printf("No system certificates found")
-		pool = x509.NewCertPool()
-	}
-	for _, path := range paths {
-		data, err := ioutil.ReadFile(path)
-		if err != nil {
-			return err
-		}
-		if !pool.AppendCertsFromPEM(data) {
-			return fmt.Errorf("certificate authority file at %s could not be read", path)
-		}
 	}
 	p.Client.Transport = &http.Transport{
 		TLSClientConfig: &tls.Config{
