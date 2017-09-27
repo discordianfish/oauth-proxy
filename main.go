@@ -26,6 +26,7 @@ func main() {
 	skipAuthRegex := StringArray{}
 	openshiftCAs := StringArray{}
 	clientCAs := StringArray{}
+	upstreamCAs := StringArray{}
 
 	config := flagSet.String("config", "", "path to config file")
 	showVersion := flagSet.Bool("version", false, "print version string")
@@ -88,6 +89,7 @@ func main() {
 	flagSet.String("approval-prompt", "force", "OAuth approval_prompt")
 
 	flagSet.String("signature-key", "", "GAP-Signature request signature key (algorithm:secretkey)")
+	flagSet.Var(&upstreamCAs, "upstream-ca", "paths to CA roots for the Upstream (target) Server (may be given multiple times, defaults to system trust store).")
 
 	providerOpenShift := openshift.New()
 	providerOpenShift.Bind(flagSet)

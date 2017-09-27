@@ -2,13 +2,13 @@ package main
 
 import (
 	"crypto/tls"
-	"crypto/x509"
-	"io/ioutil"
 	"log"
 	"net"
 	"net/http"
 	"strings"
 	"time"
+
+	"github.com/openshift/oauth-proxy/util"
 )
 
 type Server struct {
@@ -83,17 +83,10 @@ func (s *Server) ServeHTTPS() {
 
 	if len(s.Opts.TLSClientCAFiles) > 0 {
 		config.ClientAuth = tls.RequestClientCert
-		clients := x509.NewCertPool()
-		for _, file := range s.Opts.TLSClientCAFiles {
-			data, err := ioutil.ReadFile(file)
-			if err != nil {
-				log.Fatalf("FATAL: loading tls client CA (%s) failed - %s", file, err)
-			}
-			if !clients.AppendCertsFromPEM(data) {
-				log.Fatalf("FATAL: unable to load valid CA from %s", file)
-			}
+		config.ClientCAs, err = util.GetCertPool(s.Opts.TLSClientCAFiles)
+		if err != nil {
+			log.Fatalf("FATAL: %s", err)
 		}
-		config.ClientCAs = clients
 	}
 
 	ln, err := net.Listen("tcp", addr)

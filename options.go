@@ -78,7 +78,8 @@ type Options struct {
 
 	RequestLogging bool `flag:"request-logging" cfg:"request_logging"`
 
-	SignatureKey string `flag:"signature-key" cfg:"signature_key" env:"OAUTH2_PROXY_SIGNATURE_KEY"`
+	SignatureKey string   `flag:"signature-key" cfg:"signature_key" env:"OAUTH2_PROXY_SIGNATURE_KEY"`
+	UpstreamCAs  []string `flag:"upstream-ca" cfg:"upstream_ca"`
 
 	// internal values that are set after config validation
 	redirectURL   *url.URL

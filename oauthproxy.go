@@ -1,6 +1,7 @@
 package main
 
 import (
+	"crypto/tls"
 	"crypto/x509"
 	b64 "encoding/base64"
 	"errors"
@@ -21,6 +22,7 @@ import (
 	"github.com/18F/hmacauth"
 	"github.com/openshift/oauth-proxy/cookie"
 	"github.com/openshift/oauth-proxy/providers"
+	"github.com/openshift/oauth-proxy/util"
 )
 
 const SignatureHeader = "GAP-Signature"
@@ -93,20 +95,32 @@ func (u *UpstreamProxy) ServeHTTP(w http.ResponseWriter, r *http.Request) {
 	u.handler.ServeHTTP(w, r)
 }
 
-func NewReverseProxy(target *url.URL, upstreamFlush time.Duration) (proxy *httputil.ReverseProxy) {
-	proxy = httputil.NewSingleHostReverseProxy(target)
+func NewReverseProxy(target *url.URL, upstreamFlush time.Duration, rootCAs []string) (*httputil.ReverseProxy, error) {
+	proxy := httputil.NewSingleHostReverseProxy(target)
 	proxy.FlushInterval = upstreamFlush
 
 	transport := &http.Transport{
 		MaxIdleConnsPerHost: 500,
 		IdleConnTimeout:     1 * time.Minute,
 	}
+	if len(rootCAs) > 0 {
+		pool, err := util.GetCertPool(rootCAs)
+		if err != nil {
+			return nil, err
+		}
+		transport.TLSClientConfig = &tls.Config{
+			RootCAs: pool,
+		}
+	}
 	if err := http2.ConfigureTransport(transport); err != nil {
+		if len(rootCAs) > 0 {
+			return nil, err
+		}
 		log.Printf("WARN: Failed to configure http2 transport: %v", err)
 	}
 	proxy.Transport = transport
 
-	return proxy
+	return proxy, nil
 }
 
 func setProxyUpstreamHostHeader(proxy *httputil.ReverseProxy, target *url.URL) {
@@ -145,7 +159,10 @@ func NewOAuthProxy(opts *Options, validator func(string) bool) *OAuthProxy {
 		case "http", "https":
 			u.Path = ""
 			log.Printf("mapping path %q => upstream %q", path, u)
-			proxy := NewReverseProxy(u, opts.UpstreamFlush)
+			proxy, err := NewReverseProxy(u, opts.UpstreamFlush, opts.UpstreamCAs)
+			if err != nil {
+				log.Fatal("Failed to initialize Reverse Proxy: ", err)
+			}
 			if !opts.PassHostHeader {
 				setProxyUpstreamHostHeader(proxy, u)
 			} else {
