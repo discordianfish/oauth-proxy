@@ -7,7 +7,7 @@ install:
   - echo "Skip go get"
 script:
   - go build .
-  - go test .
+  - go test -timeout 60s .
 
 notifications:
   irc: "chat.freenode.net#openshift-dev"
