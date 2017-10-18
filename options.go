@@ -22,7 +22,7 @@ type Options struct {
 	ProxyPrefix      string        `flag:"proxy-prefix" cfg:"proxy-prefix"`
 	HttpAddress      string        `flag:"http-address" cfg:"http_address"`
 	HttpsAddress     string        `flag:"https-address" cfg:"https_address"`
-	DebugAddress     string        `flag:"debug-address", cfg:"debug_address"`
+	DebugAddress     string        `flag:"debug-address" cfg:"debug_address"`
 	UpstreamFlush    time.Duration `flag:"upstream-flush" cfg:"upstream_flush"`
 	RedirectURL      string        `flag:"redirect-url" cfg:"redirect_url"`
 	ClientID         string        `flag:"client-id" cfg:"client_id" env:"OAUTH2_PROXY_CLIENT_ID"`

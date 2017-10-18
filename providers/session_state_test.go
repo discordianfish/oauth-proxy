@@ -5,8 +5,8 @@ import (
 	"testing"
 	"time"
 
-	"github.com/openshift/oauth-proxy/cookie"
 	"github.com/bmizerany/assert"
+	"github.com/openshift/oauth-proxy/cookie"
 )
 
 const secret = "0123456789abcdefghijklmnopqrstuv"
