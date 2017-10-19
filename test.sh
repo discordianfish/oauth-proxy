@@ -2,7 +2,7 @@
 set -e
 
 echo "gofmt"
-diff -u <(echo -n) <(gofmt -d $(find . -type f -name '*.go' -not -path "./.godeps/*"))
+diff -u <(echo -n) <(gofmt -d $(find . -type f -name '*.go' -not -path "./.godeps/*" -not -path "./vendor/*"))
 echo "go vet"
 go vet ./...
 echo "go test"
