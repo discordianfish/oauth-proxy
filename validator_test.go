@@ -95,6 +95,9 @@ func TestValidatorSingleDomain(t *testing.T) {
 	if !validator("baz.quux@example.com") {
 		t.Error("email from same domain should validate")
 	}
+	if validator("foo.bar@example0.com") {
+		t.Error("email from not listed domain should not validate")
+	}
 }
 
 func TestValidatorMultipleEmailsMultipleDomains(t *testing.T) {
@@ -158,5 +161,21 @@ func TestValidatorIgnoreSpacesInAuthEmails(t *testing.T) {
 
 	if !validator("foo.bar@example.com") {
 		t.Error("email should validate")
+	}
+}
+
+func TestValidatorWildcardDomain(t *testing.T) {
+	vt := NewValidatorTest(t)
+	defer vt.TearDown()
+
+	vt.WriteEmails(t, []string(nil))
+	domains := []string{"*"}
+	validator := vt.NewValidator(domains, nil)
+
+	if !validator("foo@foo.com") {
+		t.Error("wildcard domain should validate any email")
+	}
+	if !validator("bar@bar.com") {
+		t.Error("wildcard domain should validate any email")
 	}
 }
