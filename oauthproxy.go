@@ -23,6 +23,7 @@ import (
 	"github.com/openshift/oauth-proxy/cookie"
 	"github.com/openshift/oauth-proxy/providers"
 	"github.com/openshift/oauth-proxy/util"
+	"github.com/yhat/wsutil"
 )
 
 const SignatureHeader = "GAP-Signature"
@@ -81,9 +82,10 @@ type OAuthProxy struct {
 }
 
 type UpstreamProxy struct {
-	upstream string
-	handler  http.Handler
-	auth     hmacauth.HmacAuth
+	upstream  string
+	handler   http.Handler
+	wsHandler http.Handler
+	auth      hmacauth.HmacAuth
 }
 
 func (u *UpstreamProxy) ServeHTTP(w http.ResponseWriter, r *http.Request) {
@@ -92,7 +94,12 @@ func (u *UpstreamProxy) ServeHTTP(w http.ResponseWriter, r *http.Request) {
 		r.Header.Set("GAP-Auth", w.Header().Get("GAP-Auth"))
 		u.auth.SignRequest(r)
 	}
-	u.handler.ServeHTTP(w, r)
+	if u.wsHandler != nil && r.Header.Get("Connection") == "Upgrade" && r.Header.Get("Upgrade") == "websocket" {
+		u.wsHandler.ServeHTTP(w, r)
+	} else {
+		u.handler.ServeHTTP(w, r)
+	}
+
 }
 
 func NewReverseProxy(target *url.URL, upstreamFlush time.Duration, rootCAs []string) (*httputil.ReverseProxy, error) {
@@ -146,6 +153,39 @@ func NewFileServer(path string, filesystemPath string) (proxy http.Handler) {
 	return http.StripPrefix(path, http.FileServer(http.Dir(filesystemPath)))
 }
 
+func NewWebSocketOrRestReverseProxy(u *url.URL, opts *Options, auth hmacauth.HmacAuth) (restProxy http.Handler) {
+	u.Path = ""
+	proxy, err := NewReverseProxy(u, opts.UpstreamFlush, opts.UpstreamCAs)
+	if err != nil {
+		log.Fatal("Failed to initialize Reverse Proxy: ", err)
+	}
+	if !opts.PassHostHeader {
+		setProxyUpstreamHostHeader(proxy, u)
+	} else {
+		setProxyDirector(proxy)
+	}
+
+	// this should give us a wss:// scheme if the url is https:// based.
+	var wsProxy *wsutil.ReverseProxy = nil
+	if opts.ProxyWebSockets {
+		wsScheme := "ws" + strings.TrimPrefix(u.Scheme, "http")
+		wsURL := &url.URL{Scheme: wsScheme, Host: u.Host}
+		wsProxy = wsutil.NewSingleHostReverseProxy(wsURL)
+
+		if wsScheme == "wss" && len(opts.UpstreamCAs) > 0 {
+			pool, err := util.GetCertPool(opts.UpstreamCAs, false)
+			if err != nil {
+				log.Fatal("Failed to fetch CertPool: ", err)
+			}
+			wsProxy.TLSClientConfig = &tls.Config{
+				RootCAs: pool,
+			}
+		}
+
+	}
+	return &UpstreamProxy{u.Host, proxy, wsProxy, auth}
+}
+
 func NewOAuthProxy(opts *Options, validator func(string) bool) *OAuthProxy {
 	serveMux := http.NewServeMux()
 	var auth hmacauth.HmacAuth
@@ -157,25 +197,17 @@ func NewOAuthProxy(opts *Options, validator func(string) bool) *OAuthProxy {
 		path := u.Path
 		switch u.Scheme {
 		case "http", "https":
-			u.Path = ""
 			log.Printf("mapping path %q => upstream %q", path, u)
-			proxy, err := NewReverseProxy(u, opts.UpstreamFlush, opts.UpstreamCAs)
-			if err != nil {
-				log.Fatal("Failed to initialize Reverse Proxy: ", err)
-			}
-			if !opts.PassHostHeader {
-				setProxyUpstreamHostHeader(proxy, u)
-			} else {
-				setProxyDirector(proxy)
-			}
-			serveMux.Handle(path, &UpstreamProxy{u.Host, proxy, auth})
+			proxy := NewWebSocketOrRestReverseProxy(u, opts, auth)
+			serveMux.Handle(path, proxy)
+
 		case "file":
 			if u.Fragment != "" {
 				path = u.Fragment
 			}
 			log.Printf("mapping path %q => file system %q", path, u.Path)
 			proxy := NewFileServer(path, u.Path)
-			serveMux.Handle(path, &UpstreamProxy{path, proxy, nil})
+			serveMux.Handle(path, &UpstreamProxy{path, proxy, nil, nil})
 		default:
 			panic(fmt.Sprintf("unknown upstream protocol %s", u.Scheme))
 		}
