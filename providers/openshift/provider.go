@@ -76,13 +76,8 @@ func (p *OpenShiftProvider) LoadDefaults(serviceAccount string, caPaths []string
 	}
 	p.reviews = reviews
 
-	if len(caPaths) == 0 {
-		// ignore errors
-		p.SetCA([]string{"/var/run/secrets/kubernetes.io/serviceaccount/ca.crt"})
-	} else {
-		if err := p.SetCA(caPaths); err != nil {
-			return nil, err
-		}
+	if err := p.setCA(caPaths); err != nil {
+		return nil, err
 	}
 
 	defaults := &providers.ProviderData{
@@ -119,14 +114,21 @@ func (p *OpenShiftProvider) LoadDefaults(serviceAccount string, caPaths []string
 }
 
 // SetCA initializes the client used for connecting to the master.
-func (p *OpenShiftProvider) SetCA(paths []string) error {
+func (p *OpenShiftProvider) setCA(paths []string) error {
 	if p.Client == nil {
 		p.Client = &http.Client{
 			Jar:       http.DefaultClient.Jar,
 			Transport: http.DefaultTransport,
 		}
 	}
-	pool, err := util.GetCertPool(paths)
+	//defaults
+	capaths := []string{"/var/run/secrets/kubernetes.io/serviceaccount/ca.crt"}
+	system_roots := true
+	if len(paths) != 0 {
+		capaths = paths
+		system_roots = false
+	}
+	pool, err := util.GetCertPool(capaths, system_roots)
 	if err != nil {
 		return err
 	}

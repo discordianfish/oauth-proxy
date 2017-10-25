@@ -83,7 +83,7 @@ func (s *Server) ServeHTTPS() {
 
 	if len(s.Opts.TLSClientCAFiles) > 0 {
 		config.ClientAuth = tls.RequestClientCert
-		config.ClientCAs, err = util.GetCertPool(s.Opts.TLSClientCAFiles)
+		config.ClientCAs, err = util.GetCertPool(s.Opts.TLSClientCAFiles, false)
 		if err != nil {
 			log.Fatalf("FATAL: %s", err)
 		}
