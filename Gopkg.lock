@@ -165,6 +165,12 @@
 
 [[projects]]
   branch = "master"
+  name = "github.com/yhat/wsutil"
+  packages = ["."]
+  revision = "1d66fa95c997864ba4d8479f56609620fe542928"
+
+[[projects]]
+  branch = "master"
   name = "golang.org/x/crypto"
   packages = ["ssh/terminal"]
   revision = "850760c427c516be930bc91280636328f1a62286"
@@ -172,7 +178,7 @@
 [[projects]]
   branch = "master"
   name = "golang.org/x/net"
-  packages = ["http2","http2/hpack","idna","lex/httplex"]
+  packages = ["http2","http2/hpack","idna","lex/httplex","websocket"]
   revision = "ddf80d0970594e2e4cccf5a98861cad3d9eaa4cd"
 
 [[projects]]
