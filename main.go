@@ -61,6 +61,7 @@ func main() {
 	flagSet.String("custom-templates-dir", "", "path to custom html templates")
 	flagSet.String("footer", "", "custom footer string. Use \"-\" to disable default footer.")
 	flagSet.String("proxy-prefix", "/oauth", "the url root path that this proxy should be nested under (e.g. /<oauth2>/sign_in)")
+	flagSet.Bool("proxy-websockets", true, "enables WebSocket proxying")
 
 	flagSet.String("openshift-group", "", "restrict logins to members of this group (or groups, if encoded as a JSON array).")
 	flagSet.String("openshift-sar", "", "require this encoded subject access review to authorize (may be a JSON list).")
