@@ -166,6 +166,13 @@ The docker images for this repository are built by [the OpenShift release proces
 $ docker pull registry.svc.ci.openshift.org/ci/oauth-proxy:v1
 ```
 
+## End-to-end testing
+
+To run the end-to-end test suite against a build of the current commit on an OpenShift cluster, use test/e2e.sh. You may need to change the DOCKER_REPO, KUBECONFIG, and TEST_NAMESPACE variables to accommodate your cluster. 
+Each test sets up an oauth-proxy deployment and steps through the OAuth process, ensuring that the backend site can be reached (or not, depending on the test). The deployment is deleted before running the next test.
+DEBUG_TEST=testname can be used to skip the cleanup step for a specific test and halt the suite to allow for further debugging on the cluster.
+
+$ test/e2e.sh
 
 ## Architecture
 
