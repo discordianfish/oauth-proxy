@@ -184,7 +184,7 @@ To authorize by email domain use `--email-domain=yourcompany.com`. To authorize 
 
 ### Config File
 
-An example [oauth2_proxy.cfg](contrib/oauth2_proxy.cfg.example) config file is in the contrib directory. It can be used by specifying `-config=/etc/oauth2_proxy.cfg`
+An example [oauth-proxy.cfg](contrib/oauth-proxy.cfg.example) config file is in the contrib directory. It can be used by specifying `-config=/etc/oauth-proxy.cfg`
 
 ### Command Line Options
 
