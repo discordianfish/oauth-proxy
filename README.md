@@ -13,10 +13,10 @@ Features:
 * May also be configured to check bearer tokens or Kubernetes client certificates and verify access
 * On OpenShift 3.6+ clusters, supports zero-configuration end-to-end TLS via the out of the box router
 
-This is a fork of the https://github.com/openshift/oauth-proxy project with other providers removed (for now). It's
+This is a fork of the https://github.com/bitly/oauth2_proxy project with other providers removed (for now). It's
 focused on providing the simplest possible secure proxy on OpenShift
 
-![Sign In Page](https://cloud.githubusercontent.com/assets/45028/4970624/7feb7dd8-6886-11e4-93e0-c9904af44ea8.png)
+![Sign In Page](https://raw.githubusercontent.com/openshift/oauth-proxy/master/front.png)
 
 ## Using this proxy with OpenShift
 
@@ -24,7 +24,7 @@ This proxy is best used as a sidecar container in a Kubernetes pod, protecting a
 only on localhost. On an OpenShift cluster, it can use the service account token as an OAuth client secret
 to identify the current user and perform access control checks. For example:
 
-    $ ./oauth2_proxy --upstream=http://localhost:8080 --cookie-secret=SECRET \
+    $ ./oauth-proxy --upstream=http://localhost:8080 --cookie-secret=SECRET \
           --openshift-service-account=default --https-address=
 
 will start the proxy against localhost:8080, encrypt the login cookie with SECRET, use the default
@@ -189,7 +189,7 @@ An example [oauth-proxy.cfg](contrib/oauth-proxy.cfg.example) config file is in 
 ### Command Line Options
 
 ```
-Usage of oauth2_proxy:
+Usage of oauth-proxy:
   -approval-prompt string: OAuth approval_prompt (default "force")
   -authenticated-emails-file string: authenticate against emails via file (one per line)
   -basic-auth-password string: the password to set when passing the HTTP Basic Auth header
@@ -240,9 +240,9 @@ See below for provider specific options
 
 ### Upstream Configuration
 
-`oauth2_proxy` supports having multiple upstreams, and has the option to pass requests on to HTTP(S) servers or serve static files from the file system. HTTP and HTTPS upstreams are configured by providing a URL such as `http://127.0.0.1:8080/` for the upstream parameter, that will forward all authenticated requests to be forwarded to the upstream server. If you instead provide `http://127.0.0.1:8080/some/path/` then it will only be requests that start with `/some/path/` which are forwarded to the upstream.
+`oauth-proxy` supports having multiple upstreams, and has the option to pass requests on to HTTP(S) servers or serve static files from the file system. HTTP and HTTPS upstreams are configured by providing a URL such as `http://127.0.0.1:8080/` for the upstream parameter, that will forward all authenticated requests to be forwarded to the upstream server. If you instead provide `http://127.0.0.1:8080/some/path/` then it will only be requests that start with `/some/path/` which are forwarded to the upstream.
 
-Static file paths are configured as a file:// URL. `file:///var/www/static/` will serve the files from that directory at `http://[oauth2_proxy url]/var/www/static/`, which may not be what you want. You can provide the path to where the files should be available by adding a fragment to the configured URL. The value of the fragment will then be used to specify which path the files are available at. `file:///var/www/static/#/static/` will ie. make `/var/www/static/` available at `http://[oauth2_proxy url]/static/`.
+Static file paths are configured as a file:// URL. `file:///var/www/static/` will serve the files from that directory at `http://[oauth-proxy url]/var/www/static/`, which may not be what you want. You can provide the path to where the files should be available by adding a fragment to the configured URL. The value of the fragment will then be used to specify which path the files are available at. `file:///var/www/static/#/static/` will ie. make `/var/www/static/` available at `http://[oauth-proxy url]/static/`.
 
 Multiple upstreams can either be configured by supplying a comma separated list to the `-upstream` parameter, supplying the parameter multiple times or provinding a list in the [config file](#config-file). When multiple upstreams are used routing to them will be based on the path they are set up with.
 
@@ -265,10 +265,10 @@ There are two recommended configurations.
 
 1) Configure SSL Terminiation with OAuth2 Proxy by providing a `--tls-cert=/path/to/cert.pem` and `--tls-key=/path/to/cert.key`.
 
-The command line to run `oauth2_proxy` in this configuration would look like this:
+The command line to run `oauth-proxy` in this configuration would look like this:
 
 ```bash
-./oauth2_proxy \
+./oauth-proxy \
    --email-domain="yourcompany.com"  \
    --upstream=http://127.0.0.1:8080/ \
    --tls-cert=/path/to/cert.pem \
@@ -283,12 +283,12 @@ The command line to run `oauth2_proxy` in this configuration would look like thi
 
 2) Configure SSL Termination with [Nginx](http://nginx.org/) (example config below), Amazon ELB, Google Cloud Platform Load Balancing, or ....
 
-Because `oauth2_proxy` listens on `127.0.0.1:4180` by default, to listen on all interfaces (needed when using an
+Because `oauth-proxy` listens on `127.0.0.1:4180` by default, to listen on all interfaces (needed when using an
 external load balancer like Amazon ELB or Google Platform Load Balancing) use `--http-address="0.0.0.0:4180"` or
 `--http-address="http://:4180"`.
 
-Nginx will listen on port `443` and handle SSL connections while proxying to `oauth2_proxy` on port `4180`.
-`oauth2_proxy` will then authenticate requests for an upstream application. The external endpoint for this example
+Nginx will listen on port `443` and handle SSL connections while proxying to `oauth-proxy` on port `4180`.
+`oauth-proxy` will then authenticate requests for an upstream application. The external endpoint for this example
 would be `https://internal.yourcompany.com/`.
 
 An example Nginx config follows. Note the use of `Strict-Transport-Security` header to pin requests to SSL
@@ -314,10 +314,10 @@ server {
 }
 ```
 
-The command line to run `oauth2_proxy` in this configuration would look like this:
+The command line to run `oauth-proxy` in this configuration would look like this:
 
 ```bash
-./oauth2_proxy \
+./oauth-proxy \
    --email-domain="yourcompany.com"  \
    --upstream=http://127.0.0.1:8080/ \
    --cookie-secret=... \
@@ -329,14 +329,14 @@ The command line to run `oauth2_proxy` in this configuration would look like thi
 
 ## Endpoint Documentation
 
-OAuth2 Proxy responds directly to the following endpoints. All other endpoints will be proxied upstream when authenticated. The `/oauth2` prefix can be changed with the `--proxy-prefix` config variable.
+oauth-proxy responds directly to the following endpoints. All other endpoints will be proxied upstream when authenticated. The `/oauth` prefix can be changed with the `--proxy-prefix` config variable.
 
 * /robots.txt - returns a 200 OK response that disallows all User-agents from all paths; see [robotstxt.org](http://www.robotstxt.org/) for more info
-* /ping - returns an 200 OK response
-* /oauth2/sign_in - the login page, which also doubles as a sign out page (it clears cookies)
-* /oauth2/start - a URL that will redirect to start the OAuth cycle
-* /oauth2/callback - the URL used at the end of the OAuth cycle. The oauth app will be configured with this as the callback url.
-* /oauth2/auth - only returns a 202 Accepted response or a 401 Unauthorized response; for use with the [Nginx `auth_request` directive](#nginx-auth-request)
+* /oauth/healthz - returns an 200 OK response
+* /oauth/sign_in - the login page, which also doubles as a sign out page (it clears cookies)
+* /oauth/start - a URL that will redirect to start the OAuth cycle
+* /oauth/callback - the URL used at the end of the OAuth cycle. The oauth app will be configured with this as the callback url.
+* /oauth/auth - only returns a 202 Accepted response or a 401 Unauthorized response; for use with the [Nginx `auth_request` directive](#nginx-auth-request)
 
 ## Request signatures
 
@@ -358,7 +358,7 @@ following:
 
 ## Logging Format
 
-OAuth2 Proxy logs requests to stdout in a format similar to Apache Combined Log.
+oauth-proxy logs requests to stdout in a format similar to Apache Combined Log.
 
 ```
 <REMOTE_ADDRESS> - <user@domain.com> [19/Mar/2015:17:20:19 -0400] <HOST_HEADER> GET <UPSTREAM_HOST> "/path/" HTTP/1.1 "<USER_AGENT>" <RESPONSE_CODE> <RESPONSE_BYTES> <REQUEST_DURATION>
@@ -366,7 +366,7 @@ OAuth2 Proxy logs requests to stdout in a format similar to Apache Combined Log.
 
 ## <a name="nginx-auth-request"></a>Configuring for use with the Nginx `auth_request` directive
 
-The [Nginx `auth_request` directive](http://nginx.org/en/docs/http/ngx_http_auth_request_module.html) allows Nginx to authenticate requests via the oauth2_proxy's `/auth` endpoint, which only returns a 202 Accepted response or a 401 Unauthorized response without proxying the request through. For example:
+The [Nginx `auth_request` directive](http://nginx.org/en/docs/http/ngx_http_auth_request_module.html) allows Nginx to authenticate requests via the oauth-proxy's `/auth` endpoint, which only returns a 202 Accepted response or a 401 Unauthorized response without proxying the request through. For example:
 
 ```nginx
 server {
