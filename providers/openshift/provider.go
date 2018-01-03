@@ -140,33 +140,35 @@ func (p *OpenShiftProvider) setCA(paths []string) error {
 	return nil
 }
 
+// encodeSARWithScope adds a "scopes" array to the SAR if it does not have one already, and outputs
+// encoded bytes.
+func encodeSARWithScope(json *simplejson.Json) ([]byte, error) {
+	if len(json.Get("scopes").MustArray()) == 0 {
+		json.Set("scopes", []interface{}{})
+	}
+	return json.Encode()
+}
+
 // parseSubjectAccessReviews parses a list of SAR records and ensures they are properly scoped.
 func parseSubjectAccessReviews(review string) ([]string, error) {
+	review = strings.TrimSpace(review)
 	if len(review) == 0 {
 		return nil, nil
 	}
+
+	// Convert to a json array to simplify encoding later
+	if review[0] != '[' && review[len(review)-1] != ']' {
+		review = "[" + review + "]"
+	}
+
 	json, err := simplejson.NewJson([]byte(review))
 	if err != nil {
 		return nil, fmt.Errorf("unable to decode review: %v", err)
 	}
 
-	if json.MustMap() != nil {
-		if len(json.Get("scopes").MustArray()) == 0 {
-			json.Set("scopes", []interface{}{})
-		}
-		data, err := json.EncodePretty()
-		if err != nil {
-			return nil, fmt.Errorf("unable to encode modified review: %v (%#v)", err, json)
-		}
-		return []string{string(data)}, nil
-	}
-
 	var reviews []string
 	for i := range json.MustArray() {
-		if len(json.GetIndex(i).Get("scopes").MustArray()) == 0 {
-			json.GetIndex(i).Set("scopes", []interface{}{})
-		}
-		data, err := json.EncodePretty()
+		data, err := encodeSARWithScope(json.GetIndex(i))
 		if err != nil {
 			return nil, fmt.Errorf("unable to encode modified review: %v (%#v)", err, json)
 		}
