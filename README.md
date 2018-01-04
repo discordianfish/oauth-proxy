@@ -193,6 +193,8 @@ Usage of oauth2_proxy:
   -approval-prompt string: OAuth approval_prompt (default "force")
   -authenticated-emails-file string: authenticate against emails via file (one per line)
   -basic-auth-password string: the password to set when passing the HTTP Basic Auth header
+  -bypass-auth-except-for value: provide authentication ONLY for request paths under proxy-prefix and those that match the given regex (may be given multiple times). Cannot be set with -skip-auth-regex
+  -bypass-auth-for value: alias for -skip-auth-regex
   -client-id string: the OAuth Client ID: ie: "123456.apps.googleusercontent.com"
   -client-secret string: the OAuth Client Secret
   -config string: path to config file
@@ -226,7 +228,7 @@ Usage of oauth2_proxy:
   -set-xauthrequest: set X-Auth-Request-User and X-Auth-Request-Email response headers (useful in Nginx auth_request mode)
   -signature-key string: GAP-Signature request signature key (algorithm:secretkey)
   -skip-auth-preflight: will skip authentication for OPTIONS requests
-  -skip-auth-regex value: bypass authentication for requests path's that match (may be given multiple times)
+  -skip-auth-regex value: bypass authentication for requests path's that match (may be given multiple times). Cannot be set with -bypass-auth-except-for
   -skip-provider-button: will skip sign-in-page to directly reach the next step: oauth/start
   -ssl-insecure-skip-verify: skip validation of certificates presented when using HTTPS
   -tls-cert string: path to certificate file

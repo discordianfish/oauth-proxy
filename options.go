@@ -56,6 +56,8 @@ type Options struct {
 	CookieHttpOnly   bool          `flag:"cookie-httponly" cfg:"cookie_httponly"`
 
 	Upstreams             []string `flag:"upstream" cfg:"upstreams"`
+	BypassAuthExceptRegex []string `flag:"bypass-auth-except-for" cfg:"bypass_auth_except_for"`
+	BypassAuthRegex       []string `flag:"bypass-auth-for" cfg:"bypass_auth_for"`
 	SkipAuthRegex         []string `flag:"skip-auth-regex" cfg:"skip_auth_regex"`
 	PassBasicAuth         bool     `flag:"pass-basic-auth" cfg:"pass_basic_auth"`
 	BasicAuthPassword     string   `flag:"basic-auth-password" cfg:"basic_auth_password"`
@@ -83,11 +85,12 @@ type Options struct {
 	UpstreamCAs  []string `flag:"upstream-ca" cfg:"upstream_ca"`
 
 	// internal values that are set after config validation
-	redirectURL   *url.URL
-	proxyURLs     []*url.URL
-	CompiledRegex []*regexp.Regexp
-	provider      providers.Provider
-	signatureData *SignatureData
+	redirectURL       *url.URL
+	proxyURLs         []*url.URL
+	CompiledAuthRegex []*regexp.Regexp
+	CompiledSkipRegex []*regexp.Regexp
+	provider          providers.Provider
+	signatureData     *SignatureData
 }
 
 type SignatureData struct {
@@ -211,13 +214,40 @@ func (o *Options) Validate(p providers.Provider) error {
 		o.proxyURLs = append(o.proxyURLs, upstreamURL)
 	}
 
+	if len(o.BypassAuthRegex) != 0 {
+		o.SkipAuthRegex = o.BypassAuthRegex
+	}
+
+	if len(o.BypassAuthExceptRegex) != 0 && len(o.SkipAuthRegex) != 0 {
+		msgs = append(msgs, "error: cannot set -skip-auth-regex and -bypass-auth-except-for together")
+	}
+
+	for _, u := range o.BypassAuthExceptRegex {
+		CompiledRegex, err := regexp.Compile(u)
+		if err != nil {
+			msgs = append(msgs, fmt.Sprintf(
+				"error compiling regex=%q %s", u, err))
+		}
+		o.CompiledAuthRegex = append(o.CompiledAuthRegex, CompiledRegex)
+	}
+
+	// Ensure paths under ProxyPrefix are still protected when using -bypass-auth-except-for
+	if len(o.CompiledAuthRegex) > 0 {
+		proxyRegex, err := regexp.Compile(o.ProxyPrefix + "*")
+		if err != nil {
+			msgs = append(msgs, fmt.Sprintf(
+				"error compiling regex=%q %s", o.ProxyPrefix+"*", err))
+		}
+		o.CompiledAuthRegex = append(o.CompiledAuthRegex, proxyRegex)
+	}
+
 	for _, u := range o.SkipAuthRegex {
 		CompiledRegex, err := regexp.Compile(u)
 		if err != nil {
 			msgs = append(msgs, fmt.Sprintf(
 				"error compiling regex=%q %s", u, err))
 		}
-		o.CompiledRegex = append(o.CompiledRegex, CompiledRegex)
+		o.CompiledSkipRegex = append(o.CompiledSkipRegex, CompiledRegex)
 	}
 
 	if o.PassAccessToken || (o.CookieRefresh != time.Duration(0)) {

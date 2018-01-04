@@ -24,6 +24,8 @@ func main() {
 	emailDomains := StringArray{}
 	upstreams := StringArray{}
 	skipAuthRegex := StringArray{}
+	bypassAuthRegex := StringArray{}
+	bypassAuthExceptRegex := StringArray{}
 	openshiftCAs := StringArray{}
 	clientCAs := StringArray{}
 	upstreamCAs := StringArray{}
@@ -45,7 +47,9 @@ func main() {
 	flagSet.String("basic-auth-password", "", "the password to set when passing the HTTP Basic Auth header")
 	flagSet.Bool("pass-access-token", false, "pass OAuth access_token to upstream via X-Forwarded-Access-Token header")
 	flagSet.Bool("pass-host-header", true, "pass the request Host Header to upstream")
-	flagSet.Var(&skipAuthRegex, "skip-auth-regex", "bypass authentication for requests path's that match (may be given multiple times)")
+	flagSet.Var(&bypassAuthExceptRegex, "bypass-auth-except-for", "provide authentication ONLY for request paths under proxy-prefix and those that match the given regex (may be given multiple times). Cannot be set with -skip-auth-regex/-bypass-auth-for")
+	flagSet.Var(&bypassAuthRegex, "bypass-auth-for", "alias for skip-auth-regex")
+	flagSet.Var(&skipAuthRegex, "skip-auth-regex", "bypass authentication for request paths that match (may be given multiple times). Cannot be set with -bypass-auth-except-for. Alias for -bypass-auth-for")
 	flagSet.Bool("skip-provider-button", false, "will skip sign-in-page to directly reach the next step: oauth/start")
 	flagSet.Bool("skip-auth-preflight", false, "will skip authentication for OPTIONS requests")
 	flagSet.Bool("ssl-insecure-skip-verify", false, "skip validation of certificates presented when using HTTPS")

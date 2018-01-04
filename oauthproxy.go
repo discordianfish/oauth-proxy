@@ -74,9 +74,11 @@ type OAuthProxy struct {
 	BasicAuthPassword   string
 	PassAccessToken     bool
 	CookieCipher        *cookie.Cipher
+	authRegex           []string
 	skipAuthRegex       []string
 	skipAuthPreflight   bool
-	compiledRegex       []*regexp.Regexp
+	compiledAuthRegex   []*regexp.Regexp
+	compiledSkipRegex   []*regexp.Regexp
 	templates           *template.Template
 	Footer              string
 }
@@ -212,7 +214,12 @@ func NewOAuthProxy(opts *Options, validator func(string) bool) *OAuthProxy {
 			panic(fmt.Sprintf("unknown upstream protocol %s", u.Scheme))
 		}
 	}
-	for _, u := range opts.CompiledRegex {
+
+	for _, u := range opts.CompiledAuthRegex {
+		log.Printf("compiled auth-regex => %q", u)
+	}
+
+	for _, u := range opts.CompiledSkipRegex {
 		log.Printf("compiled skip-auth-regex => %q", u)
 	}
 
@@ -280,9 +287,11 @@ func NewOAuthProxy(opts *Options, validator func(string) bool) *OAuthProxy {
 		provider:           opts.provider,
 		serveMux:           serveMux,
 		redirectURL:        redirectURL,
+		authRegex:          opts.BypassAuthExceptRegex,
 		skipAuthRegex:      opts.SkipAuthRegex,
 		skipAuthPreflight:  opts.SkipAuthPreflight,
-		compiledRegex:      opts.CompiledRegex,
+		compiledAuthRegex:  opts.CompiledAuthRegex,
+		compiledSkipRegex:  opts.CompiledSkipRegex,
 		SetXAuthRequest:    opts.SetXAuthRequest,
 		PassBasicAuth:      opts.PassBasicAuth,
 		PassUserHeaders:    opts.PassUserHeaders,
@@ -512,11 +521,24 @@ func (p *OAuthProxy) GetRedirect(req *http.Request) (redirect string, err error)
 
 func (p *OAuthProxy) IsWhitelistedRequest(req *http.Request) (ok bool) {
 	isPreflightRequestAllowed := p.skipAuthPreflight && req.Method == "OPTIONS"
-	return isPreflightRequestAllowed || p.IsWhitelistedPath(req.URL.Path)
+	return isPreflightRequestAllowed || (!p.IsProtectedPath(req.URL.Path) || p.IsWhitelistedPath(req.URL.Path))
+}
+
+// IsProtectedPath returns true if auth-regex matches the path, false otherwise. Defaults to true if no auth-regex is given.
+func (p *OAuthProxy) IsProtectedPath(path string) bool {
+	match := true
+	for _, u := range p.compiledAuthRegex {
+		ok := u.MatchString(path)
+		if ok {
+			return true
+		}
+		match = false
+	}
+	return match
 }
 
 func (p *OAuthProxy) IsWhitelistedPath(path string) (ok bool) {
-	for _, u := range p.compiledRegex {
+	for _, u := range p.compiledSkipRegex {
 		ok = u.MatchString(path)
 		if ok {
 			return
