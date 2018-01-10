@@ -329,6 +329,13 @@ func (p *OAuthProxy) redeemCode(host, code string) (s *providers.SessionState, e
 
 	if s.Email == "" {
 		s.Email, err = p.provider.GetEmailAddress(s)
+		if err != nil {
+			return
+		}
+	}
+	err = p.provider.ReviewUser(s.Email, s.AccessToken, host)
+	if err != nil {
+		return nil, err
 	}
 	return
 }
