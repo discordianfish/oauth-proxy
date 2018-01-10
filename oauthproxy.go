@@ -2,12 +2,10 @@ package main
 
 import (
 	"crypto/tls"
-	"crypto/x509"
 	b64 "encoding/base64"
 	"errors"
 	"fmt"
 	"html/template"
-	"io/ioutil"
 	"log"
 	"net"
 	"net/http"
@@ -237,23 +235,6 @@ func NewOAuthProxy(opts *Options, validator func(string) bool) *OAuthProxy {
 		cipher, err = cookie.NewCipher(secretBytes(opts.CookieSecret))
 		if err != nil {
 			log.Fatal("cookie-secret error: ", err)
-		}
-	}
-
-	var options *x509.VerifyOptions
-	if len(opts.TLSClientCAFiles) > 0 {
-		options = &x509.VerifyOptions{
-			KeyUsages: []x509.ExtKeyUsage{x509.ExtKeyUsageClientAuth},
-		}
-		options.Roots = x509.NewCertPool()
-		for _, file := range opts.TLSClientCAFiles {
-			data, err := ioutil.ReadFile(file)
-			if err != nil {
-				log.Fatalf("FATAL: loading tls client ca (%s) failed - %s", file, err)
-			}
-			if !options.Roots.AppendCertsFromPEM(data) {
-				log.Fatalf("FATAL: unable to load valid CA from %s", file)
-			}
 		}
 	}
 
