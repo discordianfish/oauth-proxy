@@ -86,7 +86,7 @@ func TestCompiledRegex(t *testing.T) {
 	o.SkipAuthRegex = regexps
 	assert.Equal(t, nil, o.Validate(&testProvider{}))
 	actual := make([]string, 0)
-	for _, regex := range o.CompiledRegex {
+	for _, regex := range o.CompiledSkipRegex {
 		actual = append(actual, regex.String())
 	}
 	assert.Equal(t, regexps, actual)
