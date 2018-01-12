@@ -498,7 +498,7 @@ func newOAuthProxySA() *corev1.ServiceAccount {
 	}
 }
 
-func newOAuthProxyConfigMap(namespace string, pemCA, pemServerCert, pemServerKey []byte) *corev1.ConfigMap {
+func newOAuthProxyConfigMap(namespace string, pemCA, pemServerCert, pemServerKey, upstreamCA, upstreamCert, upstreamKey []byte) *corev1.ConfigMap {
 	return &corev1.ConfigMap{
 		TypeMeta: metav1.TypeMeta{
 			Kind:       "ConfigMap",
@@ -509,9 +509,12 @@ func newOAuthProxyConfigMap(namespace string, pemCA, pemServerCert, pemServerKey
 			Namespace: namespace,
 		},
 		Data: map[string]string{
-			"ca.crt":  "|\n" + string(pemCA),
-			"tls.crt": "|\n" + string(pemServerCert),
-			"tls.key": "|\n" + string(pemServerKey),
+			"ca.crt":         "|\n" + string(pemCA),
+			"tls.crt":        "|\n" + string(pemServerCert),
+			"tls.key":        "|\n" + string(pemServerKey),
+			"upstreamca.crt": "|\n" + string(upstreamCA),
+			"upstream.crt":   "|\n" + string(upstreamCert),
+			"upstream.key":   "|\n" + string(upstreamKey),
 		},
 	}
 }
@@ -568,6 +571,12 @@ func newOAuthProxyPod(proxyImage, backendImage string, proxyArgs, backendEnvs []
 					Ports: []corev1.ContainerPort{
 						{
 							ContainerPort: 8080,
+						},
+					},
+					VolumeMounts: []corev1.VolumeMount{
+						{
+							MountPath: "/etc/tls/private",
+							Name:      "proxy-cert-volume",
 						},
 					},
 					Env: backendEnvVars,
