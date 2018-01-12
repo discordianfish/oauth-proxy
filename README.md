@@ -230,7 +230,7 @@ Usage of oauth-proxy:
   -proxy-websockets: enables WebSocket proxying (default true)
   -redeem-url string: Token redemption endpoint
   -redirect-url string: the OAuth Redirect URL. ie: "https://internalapp.yourcompany.com/oauth2/callback"
-  -request-logging: Log requests to stdout (default true)
+  -request-logging: Log requests to stdout (default false)
   -scope string: OAuth scope specification
   -set-xauthrequest: set X-Auth-Request-User and X-Auth-Request-Email response headers (useful in Nginx auth_request mode)
   -signature-key string: GAP-Signature request signature key (algorithm:secretkey)
