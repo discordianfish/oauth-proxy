@@ -21,6 +21,10 @@ func TestOAuthProxyE2E(t *testing.T) {
 	oauthProxyTests := map[string]struct {
 		oauthProxyArgs []string
 		expectedErr    string
+		accessSubPath  string
+		pageResult     string
+		backendEnvs    []string
+		bypass         bool
 	}{
 		"basic": {
 			oauthProxyArgs: []string{
@@ -31,9 +35,12 @@ func TestOAuthProxyE2E(t *testing.T) {
 				"--tls-cert=/etc/tls/private/tls.crt",
 				"--tls-key=/etc/tls/private/tls.key",
 				"--tls-client-ca=/etc/tls/private/ca.crt",
+				"--skip-provider-button",
 				"--cookie-secret=SECRET",
 			},
+			backendEnvs: []string{},
 			expectedErr: "",
+			pageResult:  "Hello OpenShift!\n",
 		},
 		// Tests a scope that is not valid for SA OAuth client use
 		"scope-full": {
@@ -46,9 +53,12 @@ func TestOAuthProxyE2E(t *testing.T) {
 				"--tls-key=/etc/tls/private/tls.key",
 				"--tls-client-ca=/etc/tls/private/ca.crt",
 				"--cookie-secret=SECRET",
+				"--skip-provider-button",
 				"--scope=user:full",
 			},
+			backendEnvs: []string{},
 			expectedErr: "403 Permission Denied",
+			pageResult:  "Hello OpenShift!\n",
 		},
 		"sar-ok": {
 			oauthProxyArgs: []string{
@@ -60,9 +70,12 @@ func TestOAuthProxyE2E(t *testing.T) {
 				"--tls-key=/etc/tls/private/tls.key",
 				"--tls-client-ca=/etc/tls/private/ca.crt",
 				"--cookie-secret=SECRET",
+				"--skip-provider-button",
 				`--openshift-sar={"namespace":"` + ns + `","resource":"services","verb":"list"}`,
 			},
+			backendEnvs: []string{},
 			expectedErr: "",
+			pageResult:  "Hello OpenShift!\n",
 		},
 		"sar-fail": {
 			oauthProxyArgs: []string{
@@ -74,9 +87,12 @@ func TestOAuthProxyE2E(t *testing.T) {
 				"--tls-key=/etc/tls/private/tls.key",
 				"--tls-client-ca=/etc/tls/private/ca.crt",
 				"--cookie-secret=SECRET",
+				"--skip-provider-button",
 				`--openshift-sar={"namespace":"other","resource":"services","verb":"list"}`,
 			},
+			backendEnvs: []string{},
 			expectedErr: "did not reach upstream site",
+			pageResult:  "Hello OpenShift!\n",
 		},
 		"sar-multi-ok": {
 			oauthProxyArgs: []string{
@@ -88,9 +104,12 @@ func TestOAuthProxyE2E(t *testing.T) {
 				"--tls-key=/etc/tls/private/tls.key",
 				"--tls-client-ca=/etc/tls/private/ca.crt",
 				"--cookie-secret=SECRET",
+				"--skip-provider-button",
 				`--openshift-sar=[{"namespace":"` + ns + `","resource":"services","verb":"list"}, {"namespace":"` + ns + `","resource":"routes","verb":"list"}]`,
 			},
+			backendEnvs: []string{},
 			expectedErr: "",
+			pageResult:  "Hello OpenShift!\n",
 		},
 		"sar-multi-fail": {
 			oauthProxyArgs: []string{
@@ -102,13 +121,167 @@ func TestOAuthProxyE2E(t *testing.T) {
 				"--tls-key=/etc/tls/private/tls.key",
 				"--tls-client-ca=/etc/tls/private/ca.crt",
 				"--cookie-secret=SECRET",
+				"--skip-provider-button",
 				`--openshift-sar=[{"namespace":"` + ns + `","resource":"services","verb":"list"}, {"namespace":"other","resource":"pods","verb":"list"}]`,
 			},
+			backendEnvs: []string{},
 			expectedErr: "did not reach upstream site",
+			pageResult:  "Hello OpenShift!\n",
+		},
+		"skip-auth-regex-bypass-foo": {
+			oauthProxyArgs: []string{
+				"--https-address=:8443",
+				"--provider=openshift",
+				"--openshift-service-account=proxy",
+				"--upstream=http://localhost:8080",
+				"--tls-cert=/etc/tls/private/tls.crt",
+				"--tls-key=/etc/tls/private/tls.key",
+				"--tls-client-ca=/etc/tls/private/ca.crt",
+				"--cookie-secret=SECRET",
+				"--skip-provider-button",
+				`--skip-auth-regex=^/foo`,
+			},
+			backendEnvs:   []string{"HELLO_SUBPATHS=/foo,/bar"},
+			accessSubPath: "/foo",
+			expectedErr:   "",
+			pageResult:    "Hello OpenShift! /foo\n",
+			bypass:        true,
+		},
+		"skip-auth-regex-protect-bar": {
+			oauthProxyArgs: []string{
+				"--https-address=:8443",
+				"--provider=openshift",
+				"--openshift-service-account=proxy",
+				"--upstream=http://localhost:8080",
+				"--tls-cert=/etc/tls/private/tls.crt",
+				"--tls-key=/etc/tls/private/tls.key",
+				"--tls-client-ca=/etc/tls/private/ca.crt",
+				"--cookie-secret=SECRET",
+				"--skip-provider-button",
+				`--skip-auth-regex=^/foo`,
+			},
+			backendEnvs:   []string{"HELLO_SUBPATHS=/foo,/bar"},
+			accessSubPath: "/bar",
+			expectedErr:   "",
+			pageResult:    "Hello OpenShift! /bar\n",
+		},
+		// test --bypass-auth-for (alias for --skip-auth-regex); expect to bypass auth for /foo
+		"bypass-auth-foo": {
+			oauthProxyArgs: []string{
+				"--https-address=:8443",
+				"--provider=openshift",
+				"--openshift-service-account=proxy",
+				"--upstream=http://localhost:8080",
+				"--tls-cert=/etc/tls/private/tls.crt",
+				"--tls-key=/etc/tls/private/tls.key",
+				"--tls-client-ca=/etc/tls/private/ca.crt",
+				"--cookie-secret=SECRET",
+				"--skip-provider-button",
+				`--bypass-auth-for=^/foo`,
+			},
+			backendEnvs:   []string{"HELLO_SUBPATHS=/foo,/bar"},
+			accessSubPath: "/foo",
+			expectedErr:   "",
+			pageResult:    "Hello OpenShift! /foo\n",
+			bypass:        true,
+		},
+		// test --bypass-auth-except-for; expect to auth /foo
+		"bypass-auth-except-try-protected": {
+			oauthProxyArgs: []string{
+				"--https-address=:8443",
+				"--provider=openshift",
+				"--openshift-service-account=proxy",
+				"--upstream=http://localhost:8080",
+				"--tls-cert=/etc/tls/private/tls.crt",
+				"--tls-key=/etc/tls/private/tls.key",
+				"--tls-client-ca=/etc/tls/private/ca.crt",
+				"--cookie-secret=SECRET",
+				"--skip-provider-button",
+				`--bypass-auth-except-for=^/foo`,
+			},
+			backendEnvs:   []string{"HELLO_SUBPATHS=/foo,/bar"},
+			accessSubPath: "/foo",
+			expectedErr:   "",
+			pageResult:    "Hello OpenShift! /foo\n",
+		},
+		// test --bypass-auth-except-for; expect to bypass auth for paths other than /foo
+		"bypass-auth-except-try-bypassed": {
+			oauthProxyArgs: []string{
+				"--https-address=:8443",
+				"--provider=openshift",
+				"--openshift-service-account=proxy",
+				"--upstream=http://localhost:8080",
+				"--tls-cert=/etc/tls/private/tls.crt",
+				"--tls-key=/etc/tls/private/tls.key",
+				"--tls-client-ca=/etc/tls/private/ca.crt",
+				"--cookie-secret=SECRET",
+				"--skip-provider-button",
+				`--bypass-auth-except-for=^/foo`,
+			},
+			backendEnvs:   []string{"HELLO_SUBPATHS=/foo,/bar"},
+			accessSubPath: "/bar",
+			expectedErr:   "",
+			pageResult:    "Hello OpenShift! /bar\n",
+			bypass:        true,
+		},
+		// --upstream-ca set with the CA for the backend site's certificate
+		"upstream-ca": {
+			oauthProxyArgs: []string{
+				"--https-address=:8443",
+				"--provider=openshift",
+				"--openshift-service-account=proxy",
+				"--upstream=https://localhost:8080",
+				"--upstream-ca=/etc/tls/private/upstreamca.crt",
+				"--tls-cert=/etc/tls/private/tls.crt",
+				"--tls-key=/etc/tls/private/tls.key",
+				"--tls-client-ca=/etc/tls/private/ca.crt",
+				"--skip-provider-button",
+				"--cookie-secret=SECRET",
+			},
+			backendEnvs: []string{"HELLO_TLS_CERT=/etc/tls/private/upstream.crt", "HELLO_TLS_KEY=/etc/tls/private/upstream.key"},
+			expectedErr: "",
+			pageResult:  "Hello OpenShift!\n",
+		},
+		// --upstream-ca set multiple times, with one matching CA
+		"upstream-ca-multi": {
+			oauthProxyArgs: []string{
+				"--https-address=:8443",
+				"--provider=openshift",
+				"--openshift-service-account=proxy",
+				"--upstream=https://localhost:8080",
+				"--upstream-ca=/etc/tls/private/upstreamca.crt",
+				"--upstream-ca=/etc/tls/private/ca.crt",
+				"--tls-cert=/etc/tls/private/tls.crt",
+				"--tls-key=/etc/tls/private/tls.key",
+				"--tls-client-ca=/etc/tls/private/ca.crt",
+				"--skip-provider-button",
+				"--cookie-secret=SECRET",
+			},
+			backendEnvs: []string{"HELLO_TLS_CERT=/etc/tls/private/upstream.crt", "HELLO_TLS_KEY=/etc/tls/private/upstream.key"},
+			expectedErr: "",
+			pageResult:  "Hello OpenShift!\n",
+		},
+		// no --upstream-ca set, so there's no valid TLS connection between proxy and upstream
+		"upstream-ca-missing": {
+			oauthProxyArgs: []string{
+				"--https-address=:8443",
+				"--provider=openshift",
+				"--openshift-service-account=proxy",
+				"--upstream=https://localhost:8080",
+				"--tls-cert=/etc/tls/private/tls.crt",
+				"--tls-key=/etc/tls/private/tls.key",
+				"--tls-client-ca=/etc/tls/private/ca.crt",
+				"--skip-provider-button",
+				"--cookie-secret=SECRET",
+			},
+			backendEnvs: []string{"HELLO_TLS_CERT=/etc/tls/private/upstream.crt", "HELLO_TLS_KEY=/etc/tls/private/upstream.key"},
+			expectedErr: "did not reach upstream site",
+			pageResult:  "Hello OpenShift!\n",
 		},
 	}
 
 	image := os.Getenv("TEST_IMAGE")
+	backendImage := os.Getenv("HELLO_IMAGE")
 
 	mathrand.Seed(time.Now().UTC().UnixNano())
 	kubeConfig, err := loadConfig(os.Getenv("KUBECONFIG"), os.Getenv("KUBECONTEXT"))
@@ -123,6 +296,10 @@ func TestOAuthProxyE2E(t *testing.T) {
 	t.Logf("test image: %s, test namespace: %s", image, ns)
 
 	for tcName, tc := range oauthProxyTests {
+		runOnly := os.Getenv("TEST")
+		if len(runOnly) > 0 && runOnly != tcName {
+			continue
+		}
 		t.Run(fmt.Sprintf("setting up e2e tests %s", tcName), func(t *testing.T) {
 			_, err := kubeClientSet.CoreV1().ServiceAccounts(ns).Create(newOAuthProxySA())
 			if err != nil {
@@ -146,18 +323,24 @@ func TestOAuthProxyE2E(t *testing.T) {
 				t.Fatalf("setup: error creating TLS certs: %s", err)
 			}
 
+			// Create the TLS certificate set for the proxy backend (-upstream-ca) and the upstream site
+			upstreamCA, upstreamCert, upstreamKey, err := createCAandCertSet("localhost")
+			if err != nil {
+				t.Fatalf("setup: error creating upstream TLS certs: %s", err)
+			}
+
 			_, err = kubeClientSet.CoreV1().Services(ns).Create(newOAuthProxyService())
 			if err != nil {
 				t.Fatalf("setup: error creating service: %s", err)
 			}
 
 			// configMap provides oauth-proxy with the certificates we created above
-			_, err = kubeClientSet.CoreV1().ConfigMaps(ns).Create(newOAuthProxyConfigMap(ns, caPem, serviceCert, serviceKey))
+			_, err = kubeClientSet.CoreV1().ConfigMaps(ns).Create(newOAuthProxyConfigMap(ns, caPem, serviceCert, serviceKey, upstreamCA, upstreamCert, upstreamKey))
 			if err != nil {
 				t.Fatalf("setup: error creating certificate configMap: %s", err)
 			}
 
-			oauthProxyPod, err := kubeClientSet.CoreV1().Pods(ns).Create(newOAuthProxyPod(image, tc.oauthProxyArgs))
+			oauthProxyPod, err := kubeClientSet.CoreV1().Pods(ns).Create(newOAuthProxyPod(image, backendImage, tc.oauthProxyArgs, tc.backendEnvs))
 			if err != nil {
 				t.Fatalf("setup: error creating oauth-proxy pod with image '%s' and args '%v': %s", image, tc.oauthProxyArgs, err)
 			}
@@ -216,7 +399,7 @@ func TestOAuthProxyE2E(t *testing.T) {
 			}()
 
 			t.Logf("running e2e test %s", tcName)
-			err = confirmOAuthFlow(proxyRouteHost, [][]byte{caPem, openshiftPemCA}, user, tc.expectedErr)
+			err = confirmOAuthFlow(proxyRouteHost, tc.accessSubPath, [][]byte{caPem, openshiftPemCA}, user, tc.pageResult, tc.expectedErr, tc.bypass)
 
 			if err == nil && len(tc.expectedErr) > 0 {
 				t.Errorf("expected error '%s', but test passed", tc.expectedErr)
@@ -282,41 +465,43 @@ func submitOAuthForm(client *http.Client, response *http.Response, user, expecte
 	return postResp, nil
 }
 
-func confirmOAuthFlow(host string, cas [][]byte, user, expectedErr string) error {
+func confirmOAuthFlow(host, subPath string, cas [][]byte, user, expectedPageResult, expectedErr string, expectedBypass bool) error {
 	// Set up the client cert store
 	client, err := newHTTPSClient(cas)
 	if err != nil {
 		return err
 	}
 
-	// Go straight to start, redirecting to OpenShift login
-	startUrl := "https://" + host + "/oauth/start"
+	startUrl := "https://" + host + subPath
 	resp, err := getResponse(startUrl, client)
 	if err != nil {
 		return err
 	}
 	defer resp.Body.Close()
 
-	// OpenShift login
-	loginResp, err := submitOAuthForm(client, resp, user, expectedErr)
-	if err != nil {
-		return err
-	}
-	defer loginResp.Body.Close()
+	if !expectedBypass {
+		// OpenShift login
+		loginResp, err := submitOAuthForm(client, resp, user, expectedErr)
+		if err != nil {
+			return err
+		}
+		defer loginResp.Body.Close()
 
-	// authorization grant form
-	grantResp, err := submitOAuthForm(client, loginResp, user, expectedErr)
-	if err != nil {
-		return err
+		// authorization grant form
+		grantResp, err := submitOAuthForm(client, loginResp, user, expectedErr)
+		if err != nil {
+			return err
+		}
+		defer grantResp.Body.Close()
+		resp = grantResp
 	}
-	defer grantResp.Body.Close()
 
-	accessRespBody, err := ioutil.ReadAll(grantResp.Body)
+	accessRespBody, err := ioutil.ReadAll(resp.Body)
 	if err != nil {
 		return nil
 	}
 
-	if string(accessRespBody) != "Hello OpenShift!\n" {
+	if string(accessRespBody) != expectedPageResult {
 		return fmt.Errorf("did not reach upstream site")
 	}
 

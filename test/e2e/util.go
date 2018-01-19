@@ -498,7 +498,7 @@ func newOAuthProxySA() *corev1.ServiceAccount {
 	}
 }
 
-func newOAuthProxyConfigMap(namespace string, pemCA, pemServerCert, pemServerKey []byte) *corev1.ConfigMap {
+func newOAuthProxyConfigMap(namespace string, pemCA, pemServerCert, pemServerKey, upstreamCA, upstreamCert, upstreamKey []byte) *corev1.ConfigMap {
 	return &corev1.ConfigMap{
 		TypeMeta: metav1.TypeMeta{
 			Kind:       "ConfigMap",
@@ -509,14 +509,25 @@ func newOAuthProxyConfigMap(namespace string, pemCA, pemServerCert, pemServerKey
 			Namespace: namespace,
 		},
 		Data: map[string]string{
-			"ca.crt":  "|\n" + string(pemCA),
-			"tls.crt": "|\n" + string(pemServerCert),
-			"tls.key": "|\n" + string(pemServerKey),
+			"ca.crt":         "|\n" + string(pemCA),
+			"tls.crt":        "|\n" + string(pemServerCert),
+			"tls.key":        "|\n" + string(pemServerKey),
+			"upstreamca.crt": "|\n" + string(upstreamCA),
+			"upstream.crt":   "|\n" + string(upstreamCert),
+			"upstream.key":   "|\n" + string(upstreamKey),
 		},
 	}
 }
 
-func newOAuthProxyPod(proxyImage string, proxyArgs []string) *corev1.Pod {
+func newOAuthProxyPod(proxyImage, backendImage string, proxyArgs, backendEnvs []string) *corev1.Pod {
+	backendEnvVars := []corev1.EnvVar{}
+	for _, env := range backendEnvs {
+		e := strings.Split(env, "=")
+		if len(e) <= 1 {
+			continue
+		}
+		backendEnvVars = append(backendEnvVars, corev1.EnvVar{Name: e[0], Value: e[1]})
+	}
 	return &corev1.Pod{
 		ObjectMeta: metav1.ObjectMeta{
 			Name: "proxy",
@@ -555,13 +566,20 @@ func newOAuthProxyPod(proxyImage string, proxyArgs []string) *corev1.Pod {
 					},
 				},
 				{
-					Image: "openshift/hello-openshift",
+					Image: backendImage,
 					Name:  "hello-openshift",
 					Ports: []corev1.ContainerPort{
 						{
 							ContainerPort: 8080,
 						},
 					},
+					VolumeMounts: []corev1.VolumeMount{
+						{
+							MountPath: "/etc/tls/private",
+							Name:      "proxy-cert-volume",
+						},
+					},
+					Env: backendEnvVars,
 				},
 			},
 		},
