@@ -79,6 +79,24 @@ func waitForPodDeletion(c kubernetes.Interface, podName, namespace string) error
 	return wait.PollImmediate(Poll, defaultTimeout, podDeleted(c, podName, namespace))
 }
 
+func waitForHealthzCheck(cas [][]byte, url string) error {
+	client, err := newHTTPSClient(cas)
+	if err != nil {
+		return err
+	}
+	return wait.PollImmediate(time.Second, 50*time.Second, func() (bool, error) {
+		resp, err := getResponse(url+"/oauth/healthz", client)
+		if err != nil {
+			return false, err
+		}
+		if resp.StatusCode != 200 {
+			return false, nil
+		}
+		resp.Body.Close()
+		return true, nil
+	})
+}
+
 func podDeleted(c kubernetes.Interface, podName, namespace string) wait.ConditionFunc {
 	return func() (bool, error) {
 		_, err := c.CoreV1().Pods(namespace).Get(podName, metav1.GetOptions{})
@@ -423,8 +441,8 @@ func execCmd(cmd string, args []string, input string) (string, error) {
 	return string(out), nil
 }
 
-func deleteTestRoute(routeName string) error {
-	_, err := execCmd("oc", []string{"delete", fmt.Sprintf("route/%s", routeName)}, "")
+func deleteTestRoute(routeName, namespace string) error {
+	_, err := execCmd("oc", []string{"delete", fmt.Sprintf("route/%s", routeName), "-n", namespace}, "")
 	if err != nil {
 		return err
 	}
@@ -482,8 +500,8 @@ spec:
 `
 
 // create a route using oc create directly
-func newOAuthProxyRoute() error {
-	_, err := execCmd("oc", []string{"create", "-f", "-"}, routeYaml)
+func newOAuthProxyRoute(namespace string) error {
+	_, err := execCmd("oc", []string{"create", "-n", namespace, "-f", "-"}, routeYaml)
 	return err
 }
 
