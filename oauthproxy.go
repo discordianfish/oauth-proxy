@@ -71,6 +71,7 @@ type OAuthProxy struct {
 	PassUserHeaders     bool
 	BasicAuthPassword   string
 	PassAccessToken     bool
+	PassUserBearerToken bool
 	CookieCipher        *cookie.Cipher
 	authRegex           []string
 	skipAuthRegex       []string
@@ -245,6 +246,10 @@ func NewOAuthProxy(opts *Options, validator func(string) bool) *OAuthProxy {
 		}
 	}
 
+	if opts.PassUserBearerToken {
+		log.Printf("WARN: Configured to pass client specified bearer token upstream.\n      Only use this option if you're sure that the upstream will not leak or abuse the given token.\n      Bear in mind that the token could be a long lived token or hard to revoke.")
+	}
+
 	return &OAuthProxy{
 		CookieName:     opts.CookieName,
 		CSRFCookieName: fmt.Sprintf("%v_%v", opts.CookieName, "csrf"),
@@ -264,24 +269,25 @@ func NewOAuthProxy(opts *Options, validator func(string) bool) *OAuthProxy {
 		OAuthCallbackPath: fmt.Sprintf("%s/callback", opts.ProxyPrefix),
 		AuthOnlyPath:      fmt.Sprintf("%s/auth", opts.ProxyPrefix),
 
-		ProxyPrefix:        opts.ProxyPrefix,
-		provider:           opts.provider,
-		serveMux:           serveMux,
-		redirectURL:        redirectURL,
-		authRegex:          opts.BypassAuthExceptRegex,
-		skipAuthRegex:      opts.SkipAuthRegex,
-		skipAuthPreflight:  opts.SkipAuthPreflight,
-		compiledAuthRegex:  opts.CompiledAuthRegex,
-		compiledSkipRegex:  opts.CompiledSkipRegex,
-		SetXAuthRequest:    opts.SetXAuthRequest,
-		PassBasicAuth:      opts.PassBasicAuth,
-		PassUserHeaders:    opts.PassUserHeaders,
-		BasicAuthPassword:  opts.BasicAuthPassword,
-		PassAccessToken:    opts.PassAccessToken,
-		SkipProviderButton: opts.SkipProviderButton,
-		CookieCipher:       cipher,
-		templates:          loadTemplates(opts.CustomTemplatesDir),
-		Footer:             opts.Footer,
+		ProxyPrefix:         opts.ProxyPrefix,
+		provider:            opts.provider,
+		serveMux:            serveMux,
+		redirectURL:         redirectURL,
+		authRegex:           opts.BypassAuthExceptRegex,
+		skipAuthRegex:       opts.SkipAuthRegex,
+		skipAuthPreflight:   opts.SkipAuthPreflight,
+		compiledAuthRegex:   opts.CompiledAuthRegex,
+		compiledSkipRegex:   opts.CompiledSkipRegex,
+		SetXAuthRequest:     opts.SetXAuthRequest,
+		PassBasicAuth:       opts.PassBasicAuth,
+		PassUserHeaders:     opts.PassUserHeaders,
+		BasicAuthPassword:   opts.BasicAuthPassword,
+		PassAccessToken:     opts.PassAccessToken,
+		PassUserBearerToken: opts.PassUserBearerToken,
+		SkipProviderButton:  opts.SkipProviderButton,
+		CookieCipher:        cipher,
+		templates:           loadTemplates(opts.CustomTemplatesDir),
+		Footer:              opts.Footer,
 	}
 }
 
@@ -752,11 +758,13 @@ func (p *OAuthProxy) Authenticate(rw http.ResponseWriter, req *http.Request) int
 		}
 	}
 
+	tokenProvidedByClient := false
 	if session == nil {
 		session, err = p.CheckRequestAuth(req)
 		if err != nil {
 			log.Printf("%s %s", remoteAddr, err)
 		}
+		tokenProvidedByClient = true
 	}
 
 	if session == nil {
@@ -783,7 +791,7 @@ func (p *OAuthProxy) Authenticate(rw http.ResponseWriter, req *http.Request) int
 			rw.Header().Set("X-Auth-Request-Email", session.Email)
 		}
 	}
-	if p.PassAccessToken && session.AccessToken != "" {
+	if ((!tokenProvidedByClient && p.PassAccessToken) || (tokenProvidedByClient && p.PassUserBearerToken)) && session.AccessToken != "" {
 		req.Header["X-Forwarded-Access-Token"] = []string{session.AccessToken}
 	}
 	if session.Email == "" {

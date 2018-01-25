@@ -111,6 +111,13 @@ WARNING: Because users are sending their own credentials to the proxy, it's impo
 setting only when the proxy is under control of the cluster administrators. Otherwise, end users 
 may be unwittingly provide their credentials to untrusted components that can then act as them.
 
+When configured for delegation, Oauth Proxy will not set the `X-Forwarded-Access-Token` header on
+the upstream request. If you wish to forward the bearer token received from the client, you will
+have to use the `--pass-user-bearer-token` option in addition to `--openshift-delegate-urls`.
+
+WARNING: With `--pass-user-bearer-token` the client's bearer token will be passed upstream. This
+could pose a security risk if the token is misused or leaked from the upstream service. Bear in
+mind that the tokens received from client could be long term and hard to revoke.
 
 ### Other configuration flags
 
@@ -221,6 +228,7 @@ Usage of oauth-proxy:
   -https-address string: <addr>:<port> to listen on for HTTPS clients (default ":443")
   -login-url string: Authentication endpoint
   -pass-access-token: pass OAuth access_token to upstream via X-Forwarded-Access-Token header
+  -pass-user-bearer-token: pass OAuth access token received from the client to upstream via X-Forwarded-Access-Token header
   -pass-basic-auth: pass HTTP Basic Auth, X-Forwarded-User and X-Forwarded-Email information to upstream (default true)
   -pass-host-header: pass the request Host Header to upstream (default true)
   -pass-user-headers: pass X-Forwarded-User and X-Forwarded-Email information to upstream (default true)

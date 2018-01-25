@@ -330,6 +330,8 @@ func (p *OpenShiftProvider) ValidateRequest(req *http.Request) (*providers.Sessi
 		return nil, nil
 	}
 
+	auth := req.Header.Get("Authorization")
+
 	// authenticate
 	user, ok, err := p.authenticator.AuthenticateRequest(req)
 	if err != nil {
@@ -349,7 +351,13 @@ func (p *OpenShiftProvider) ValidateRequest(req *http.Request) (*providers.Sessi
 		log.Printf("authorizer reason: %s", reason)
 		return nil, nil
 	}
-	return &providers.SessionState{User: user.GetName(), Email: user.GetName() + "@cluster.local"}, nil
+
+	parts := strings.SplitN(auth, " ", 2)
+	session := &providers.SessionState{User: user.GetName(), Email: user.GetName() + "@cluster.local"}
+	if parts[0] == "Bearer" {
+		session.AccessToken = parts[1]
+	}
+	return session, nil
 }
 
 func (p *OpenShiftProvider) GetEmailAddress(s *providers.SessionState) (string, error) {
