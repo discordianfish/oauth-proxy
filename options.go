@@ -41,6 +41,7 @@ type Options struct {
 	Footer                  string   `flag:"footer" cfg:"footer"`
 
 	OpenShiftSAR            string   `flag:"openshift-sar" cfg:"openshift_sar"`
+	OpenShiftSARByHost      string   `flag:"openshift-sar-by-host" cfg:"openshift_sar_by_host"`
 	OpenShiftReviewURL      string   `flag:"openshift-review-url" cfg:"openshift_review_url"`
 	OpenShiftCAs            []string `flag:"openshift-ca" cfg:"openshift_ca"`
 	OpenShiftServiceAccount string   `flag:"openshift-service-account" cfg:"openshift_service_account"`
@@ -137,7 +138,7 @@ func (o *Options) Validate(p providers.Provider) error {
 	// allow the provider to default some values
 	switch provider := p.(type) {
 	case *openshift.OpenShiftProvider:
-		defaults, err := provider.LoadDefaults(o.OpenShiftServiceAccount, o.OpenShiftCAs, o.OpenShiftSAR, o.OpenShiftDelegateURLs)
+		defaults, err := provider.LoadDefaults(o.OpenShiftServiceAccount, o.OpenShiftCAs, o.OpenShiftSAR, o.OpenShiftSARByHost, o.OpenShiftDelegateURLs)
 		if err != nil {
 			return err
 		}

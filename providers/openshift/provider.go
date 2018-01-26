@@ -44,6 +44,7 @@ type OpenShiftProvider struct {
 	defaultRecord authorizer.AttributesRecord
 	reviews       []string
 	paths         recordsByPath
+	hostreviews   map[string][]string
 }
 
 func New() *OpenShiftProvider {
@@ -62,7 +63,7 @@ func (p *OpenShiftProvider) Bind(flags *flag.FlagSet) {
 
 // LoadDefaults accepts configuration and loads defaults from the environment, or returns an error.
 // The provider may partially initialize config for subsequent calls.
-func (p *OpenShiftProvider) LoadDefaults(serviceAccount string, caPaths []string, reviewJSON, resources string) (*providers.ProviderData, error) {
+func (p *OpenShiftProvider) LoadDefaults(serviceAccount string, caPaths []string, reviewJSON, reviewByHostJSON, resources string) (*providers.ProviderData, error) {
 	if len(resources) > 0 {
 		paths, err := parseResources(resources)
 		if err != nil {
@@ -75,6 +76,12 @@ func (p *OpenShiftProvider) LoadDefaults(serviceAccount string, caPaths []string
 		return nil, err
 	}
 	p.reviews = reviews
+
+	hostreviews, err := parseSubjectAccessReviewsByHost(reviewByHostJSON)
+	if err != nil {
+		return nil, err
+	}
+	p.hostreviews = hostreviews
 
 	if err := p.setCA(caPaths); err != nil {
 		return nil, err
@@ -147,6 +154,30 @@ func encodeSARWithScope(json *simplejson.Json) ([]byte, error) {
 		json.Set("scopes", []interface{}{})
 	}
 	return json.Encode()
+}
+
+func parseSubjectAccessReviewsByHost(review string) (map[string][]string, error) {
+	if len(review) == 0 {
+		return nil, nil
+	}
+	json, err := simplejson.NewJson([]byte(review))
+	if err != nil {
+		return nil, fmt.Errorf("unable to decode review: %v", err)
+	}
+
+	reviews := make(map[string][]string)
+	for k, _ := range json.MustMap() {
+		data, err := json.Get(k).EncodePretty()
+		if err != nil {
+			return nil, err
+		}
+		r, err := parseSubjectAccessReviews(string(data))
+		if err != nil {
+			return nil, err
+		}
+		reviews[k] = r
+	}
+	return reviews, nil
 }
 
 // parseSubjectAccessReviews parses a list of SAR records and ensures they are properly scoped.
@@ -370,14 +401,21 @@ func (p *OpenShiftProvider) GetEmailAddress(s *providers.SessionState) (string, 
 	if !strings.Contains(name, "@") {
 		name = name + "@cluster.local"
 	}
-	if err := p.reviewUser(name, s.AccessToken); err != nil {
-		return "", err
-	}
 	return name, nil
 }
 
-func (p *OpenShiftProvider) reviewUser(name, accessToken string) error {
-	for _, review := range p.reviews {
+func (p *OpenShiftProvider) ReviewUser(name, accessToken, host string) error {
+	var tocheck []string
+
+	hostreviews, ok := p.hostreviews[host]
+	if ok {
+		tocheck = append(tocheck, hostreviews...)
+	}
+	if len(p.reviews) > 0 {
+		tocheck = append(tocheck, p.reviews...)
+	}
+
+	for _, review := range tocheck {
 		req, err := http.NewRequest("POST", p.ReviewURL.String(), bytes.NewBufferString(review))
 		if err != nil {
 			log.Printf("failed building request %s", err)

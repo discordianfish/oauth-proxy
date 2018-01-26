@@ -69,6 +69,7 @@ func main() {
 
 	flagSet.String("openshift-group", "", "restrict logins to members of this group (or groups, if encoded as a JSON array).")
 	flagSet.String("openshift-sar", "", "require this encoded subject access review to authorize (may be a JSON list).")
+	flagSet.String("openshift-sar-by-host", "", "require this encoded subject access review to authorize (must be a JSON array).")
 	flagSet.Var(&openshiftCAs, "openshift-ca", "paths to CA roots for the OpenShift API (may be given multiple times, defaults to /var/run/secrets/kubernetes.io/serviceaccount/ca.crt).")
 	flagSet.String("openshift-review-url", "", "Permission check endpoint (defaults to the subject access review endpoint)")
 	flagSet.String("openshift-delegate-urls", "", "If set, perform delegated authorization against the OpenShift API server. Value is a JSON map of path prefixes to v1beta1.ResourceAttribute records that must be granted to the user to continue. E.g. {\"/\":{\"resource\":\"pods\",\"namespace\":\"default\",\"name\":\"test\"}} only allows users who can see the pod test in namespace default.")

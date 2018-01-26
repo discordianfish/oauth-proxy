@@ -10,6 +10,7 @@ import (
 type Provider interface {
 	Data() *ProviderData
 
+	ReviewUser(name, accessToken, host string) (error)
 	GetEmailAddress(*SessionState) (string, error)
 	Redeem(string, string) (*SessionState, error)
 	ValidateGroup(string) bool

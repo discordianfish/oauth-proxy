@@ -76,6 +76,20 @@ Run `oc explain subjectaccessreview` to see the schema for a review, including o
 Specifying multiple rules via a JSON array (`[{...}, {...}]`) will require all permissions to
 be granted.
 
+##### Require specific permissions per host with `--openshift-sar-by-host=JSON`
+
+This is similar to the `--openshift-sar` option but instead of the rules applying to all hosts, you
+can set up specific rules that are checked for a particular upstream host. Using a JSON object the
+keys are hostnames and the value is a JSON array of SAR rules.
+
+Both `--openshift-sar` and `--openshift-sar-by-host` can be used together which will require all
+of the rules from the former as well as any rules that match the host to be satisified for a user
+to be able to access the backed server.
+
+Example:
+
+    # Allows access to foo.example.com if the user can view the service 'proxy' in namespace 'app-dev'
+    --openshift-sar-by-host='{"foo.example.com":{"namespace":"app-dev","resource":"services","name":"proxy","verb":"get"}}'
 
 #### Delegate authentication and authorization to OpenShift for infrastructure
 
