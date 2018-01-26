@@ -46,6 +46,7 @@ func main() {
 	flagSet.Bool("pass-user-headers", true, "pass X-Forwarded-User and X-Forwarded-Email information to upstream")
 	flagSet.String("basic-auth-password", "", "the password to set when passing the HTTP Basic Auth header")
 	flagSet.Bool("pass-access-token", false, "pass OAuth access_token to upstream via X-Forwarded-Access-Token header")
+	flagSet.Bool("pass-user-bearer-token", false, "pass OAuth access token received from the client to upstream via X-Forwarded-Access-Token header")
 	flagSet.Bool("pass-host-header", true, "pass the request Host Header to upstream")
 	flagSet.Var(&bypassAuthExceptRegex, "bypass-auth-except-for", "provide authentication ONLY for request paths under proxy-prefix and those that match the given regex (may be given multiple times). Cannot be set with -skip-auth-regex/-bypass-auth-for")
 	flagSet.Var(&bypassAuthRegex, "bypass-auth-for", "alias for skip-auth-regex")
