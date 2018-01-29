@@ -1,15 +1,23 @@
 language: go
 
 go:
-  - 1.8
+  - 1.9
 
 install:
   - echo "Skip go get"
+
+before_script:
+  - echo 'DOCKER_OPTS="--insecure-registry 172.30.0.0/16 -H tcp://127.0.0.1:2375 -H unix:///var/run/docker.sock"' | sudo tee --append /etc/default/docker
+  - sudo service docker restart
+  - sudo docker run -d -p 5000:5000 --restart=always --name registry registry:2
+  - sudo ps aux | grep docker
+
 script:
   - go build .
   - go test -timeout 60s .
+  - travis_wait 40 test/e2e.sh clusterup
 
 notifications:
   irc: "chat.freenode.net#openshift-dev"
 
-sudo: false
+sudo: true

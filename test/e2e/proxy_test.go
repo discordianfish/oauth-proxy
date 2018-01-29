@@ -306,7 +306,7 @@ func TestOAuthProxyE2E(t *testing.T) {
 				t.Fatalf("setup: error creating SA: %s", err)
 			}
 
-			err = newOAuthProxyRoute()
+			err = newOAuthProxyRoute(ns)
 			if err != nil {
 				t.Fatalf("setup: error creating route: %s", err)
 			}
@@ -378,7 +378,7 @@ func TestOAuthProxyE2E(t *testing.T) {
 
 			user := randLogin()
 			// For SAR tests the random user needs the admin role for this namespace.
-			out, err := execCmd("oc", []string{"adm", "policy", "add-role-to-user", "admin", user}, "")
+			out, err := execCmd("oc", []string{"adm", "policy", "add-role-to-user", "admin", user, "-n", ns, "--rolebinding-name", "sar-" + user}, "")
 			if err != nil {
 				t.Fatalf("setup: error setting test user role: %s", err)
 			}
@@ -391,14 +391,15 @@ func TestOAuthProxyE2E(t *testing.T) {
 				t.Logf("cleaning up test %s", tcName)
 				kubeClientSet.CoreV1().Pods(ns).Delete("proxy", nil)
 				kubeClientSet.CoreV1().Services(ns).Delete("proxy", nil)
-				deleteTestRoute("proxy-route")
+				deleteTestRoute("proxy-route", ns)
 				kubeClientSet.CoreV1().ConfigMaps(ns).Delete("proxy-certs", nil)
 				kubeClientSet.CoreV1().ServiceAccounts(ns).Delete("proxy", nil)
 				waitForPodDeletion(kubeClientSet, oauthProxyPod.Name, ns)
-				execCmd("oc", []string{"adm", "policy", "remove-role-from-user", "admin", user}, "")
+				execCmd("oc", []string{"adm", "policy", "remove-role-from-user", "admin", user, "-n", ns}, "")
 			}()
 
-			t.Logf("running e2e test %s", tcName)
+			waitForHealthzCheck([][]byte{caPem, openshiftPemCA}, "https://"+proxyRouteHost)
+
 			err = confirmOAuthFlow(proxyRouteHost, tc.accessSubPath, [][]byte{caPem, openshiftPemCA}, user, tc.pageResult, tc.expectedErr, tc.bypass)
 
 			if err == nil && len(tc.expectedErr) > 0 {
@@ -492,6 +493,7 @@ func confirmOAuthFlow(host, subPath string, cas [][]byte, user, expectedPageResu
 		if err != nil {
 			return err
 		}
+
 		defer grantResp.Body.Close()
 		resp = grantResp
 	}
