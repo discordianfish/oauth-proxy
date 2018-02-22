@@ -395,7 +395,7 @@ func (p *OAuthProxy) LoadCookiedSession(req *http.Request) (*providers.SessionSt
 	c, err := req.Cookie(p.CookieName)
 	if err != nil {
 		// always http.ErrNoCookie
-		return nil, age, fmt.Errorf("Cookie %q not present", p.CookieName)
+		return nil, age, err
 	}
 	val, timestamp, ok := cookie.Validate(c, fmt.Sprintf("%s%s", p.CookieSeed, req.Host), p.CookieExpire)
 	if !ok {
@@ -706,7 +706,7 @@ func (p *OAuthProxy) Authenticate(rw http.ResponseWriter, req *http.Request) int
 	remoteAddr := getRemoteAddr(req)
 
 	session, sessionAge, err := p.LoadCookiedSession(req)
-	if err != nil {
+	if err != nil && err != http.ErrNoCookie {
 		log.Printf("%s %s", remoteAddr, err)
 	}
 	if session != nil && sessionAge > p.CookieRefresh && p.CookieRefresh != time.Duration(0) {
