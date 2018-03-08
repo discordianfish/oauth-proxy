@@ -13,7 +13,6 @@ import (
 
 	"github.com/BurntSushi/toml"
 	"github.com/mreiferson/go-options"
-	"github.com/openshift/oauth-proxy/providers"
 	"github.com/openshift/oauth-proxy/providers/openshift"
 )
 
@@ -29,6 +28,7 @@ func main() {
 	openshiftCAs := StringArray{}
 	clientCAs := StringArray{}
 	upstreamCAs := StringArray{}
+	googleGroups := StringArray{}
 
 	config := flagSet.String("config", "", "path to config file")
 	showVersion := flagSet.Bool("version", false, "print version string")
@@ -57,6 +57,12 @@ func main() {
 	flagSet.String("debug-address", "", "[http://]<addr>:<port> or unix://<path> to listen on for debug and requests")
 
 	flagSet.Var(&emailDomains, "email-domain", "authenticate emails with the specified domain (may be given multiple times). Use * to authenticate any email")
+	flagSet.String("azure-tenant", "common", "go to a tenant-specific or common (tenant-independent) endpoint.")
+	flagSet.String("github-org", "", "restrict logins to members of this organisation")
+	flagSet.String("github-team", "", "restrict logins to members of this team")
+	flagSet.Var(&googleGroups, "google-group", "restrict logins to members of this google group (may be given multiple times).")
+	flagSet.String("google-admin-email", "", "the google admin to impersonate for api calls")
+	flagSet.String("google-service-account-json", "", "the path to the service account json credentials")
 	flagSet.String("client-id", "", "the OAuth Client ID: ie: \"123456.apps.googleusercontent.com\"")
 	flagSet.String("client-secret", "", "the OAuth Client Secret")
 	flagSet.String("client-secret-file", "", "a file containing the client-secret")
@@ -88,9 +94,11 @@ func main() {
 	flagSet.Bool("request-logging", false, "Log requests to stdout")
 
 	flagSet.String("provider", "openshift", "OAuth provider")
+	flagSet.String("oidc-issuer-url", "", "OpenID Connect issuer URL (ie: https://accounts.google.com)")
 	flagSet.String("login-url", "", "Authentication endpoint")
 	flagSet.String("redeem-url", "", "Token redemption endpoint")
 	flagSet.String("profile-url", "", "Profile access endpoint")
+	flagSet.String("resource", "", "The resource that is protected (Azure AD only)")
 	flagSet.String("validate-url", "", "Access token validation endpoint")
 	flagSet.String("scope", "", "OAuth scope specification")
 	flagSet.String("approval-prompt", "force", "OAuth approval_prompt")
@@ -120,16 +128,7 @@ func main() {
 	cfg.LoadEnvForStruct(opts)
 	options.Resolve(opts, flagSet, cfg)
 
-	var p providers.Provider
-	switch opts.Provider {
-	case "openshift":
-		p = providerOpenShift
-	default:
-		log.Printf("Invalid configuration: provider %q is not recognized", opts.Provider)
-		os.Exit(1)
-	}
-
-	err := opts.Validate(p)
+	err := opts.Validate()
 	if err != nil {
 		log.Printf("%s", err)
 		os.Exit(1)
