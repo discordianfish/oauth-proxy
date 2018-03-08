@@ -10,7 +10,7 @@ import (
 type Provider interface {
 	Data() *ProviderData
 
-	ReviewUser(name, accessToken, host string) (error)
+	ReviewUser(name, accessToken, host string) error
 	GetEmailAddress(*SessionState) (string, error)
 	Redeem(string, string) (*SessionState, error)
 	ValidateGroup(string) bool
@@ -24,3 +24,22 @@ type Provider interface {
 
 // ErrPermissionDenied may be returned from Redeem() to indicate the user is not allowed to login.
 var ErrPermissionDenied = errors.New("permission denied")
+
+func New(provider string, p *ProviderData) Provider {
+	switch provider {
+	case "linkedin":
+		return NewLinkedInProvider(p)
+	case "facebook":
+		return NewFacebookProvider(p)
+	case "github":
+		return NewGitHubProvider(p)
+	case "azure":
+		return NewAzureProvider(p)
+	case "gitlab":
+		return NewGitLabProvider(p)
+	case "oidc":
+		return NewOIDCProvider(p)
+	default:
+		return NewGoogleProvider(p)
+	}
+}

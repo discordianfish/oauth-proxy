@@ -1,6 +1,7 @@
 package main
 
 import (
+	"context"
 	"crypto"
 	"crypto/tls"
 	"encoding/base64"
@@ -8,11 +9,13 @@ import (
 	"io/ioutil"
 	"net/http"
 	"net/url"
+	"os"
 	"regexp"
 	"strings"
 	"time"
 
-	"github.com/18F/hmacauth"
+	oidc "github.com/coreos/go-oidc"
+	"github.com/mbland/hmacauth"
 	"github.com/openshift/oauth-proxy/providers"
 	"github.com/openshift/oauth-proxy/providers/openshift"
 )
@@ -33,12 +36,13 @@ type Options struct {
 	TLSKeyFile       string        `flag:"tls-key" cfg:"tls_key_file"`
 	TLSClientCAFiles []string      `flag:"tls-client-ca" cfg:"tls_client_ca"`
 
-	AuthenticatedEmailsFile string   `flag:"authenticated-emails-file" cfg:"authenticated_emails_file"`
-	EmailDomains            []string `flag:"email-domain" cfg:"email_domains"`
-	HtpasswdFile            string   `flag:"htpasswd-file" cfg:"htpasswd_file"`
-	DisplayHtpasswdForm     bool     `flag:"display-htpasswd-form" cfg:"display_htpasswd_form"`
-	CustomTemplatesDir      string   `flag:"custom-templates-dir" cfg:"custom_templates_dir"`
-	Footer                  string   `flag:"footer" cfg:"footer"`
+	AuthenticatedEmailsFile string `flag:"authenticated-emails-file" cfg:"authenticated_em
+ails_file"`
+	EmailDomains        []string `flag:"email-domain" cfg:"email_domains"`
+	HtpasswdFile        string   `flag:"htpasswd-file" cfg:"htpasswd_file"`
+	DisplayHtpasswdForm bool     `flag:"display-htpasswd-form" cfg:"display_htpasswd_form"`
+	CustomTemplatesDir  string   `flag:"custom-templates-dir" cfg:"custom_templates_dir"`
+	Footer              string   `flag:"footer" cfg:"footer"`
 
 	OpenShiftSAR            string   `flag:"openshift-sar" cfg:"openshift_sar"`
 	OpenShiftSARByHost      string   `flag:"openshift-sar-by-host" cfg:"openshift_sar_by_host"`
@@ -55,6 +59,13 @@ type Options struct {
 	CookieRefresh    time.Duration `flag:"cookie-refresh" cfg:"cookie_refresh" env:"OAUTH2_PROXY_COOKIE_REFRESH"`
 	CookieSecure     bool          `flag:"cookie-secure" cfg:"cookie_secure"`
 	CookieHttpOnly   bool          `flag:"cookie-httponly" cfg:"cookie_httponly"`
+
+	AzureTenant              string   `flag:"azure-tenant" cfg:"azure_tenant"`
+	GitHubOrg                string   `flag:"github-org" cfg:"github_org"`
+	GitHubTeam               string   `flag:"github-team" cfg:"github_team"`
+	GoogleGroups             []string `flag:"google-group" cfg:"google_group"`
+	GoogleAdminEmail         string   `flag:"google-admin-email" cfg:"google_admin_email"`
+	GoogleServiceAccountJSON string   `flag:"google-service-account-json" cfg:"google_service_account_json"`
 
 	Upstreams             []string `flag:"upstream" cfg:"upstreams"`
 	BypassAuthExceptRegex []string `flag:"bypass-auth-except-for" cfg:"bypass_auth_except_for"`
@@ -73,18 +84,19 @@ type Options struct {
 
 	// These options allow for other providers besides Google, with
 	// potential overrides.
-	Provider       string `flag:"provider" cfg:"provider"`
-	LoginURL       string `flag:"login-url" cfg:"login_url"`
-	RedeemURL      string `flag:"redeem-url" cfg:"redeem_url"`
-	ProfileURL     string `flag:"profile-url" cfg:"profile_url"`
-	ValidateURL    string `flag:"validate-url" cfg:"validate_url"`
-	Scope          string `flag:"scope" cfg:"scope"`
-	ApprovalPrompt string `flag:"approval-prompt" cfg:"approval_prompt"`
+	ApprovalPrompt    string `flag:"approval-prompt" cfg:"approval_prompt"`
+	Provider          string `flag:"provider" cfg:"provider"`
+	OIDCIssuerURL     string `flag:"oidc-issuer-url" cfg:"oidc_issuer_url"`
+	LoginURL          string `flag:"login-url" cfg:"login_url"`
+	RedeemURL         string `flag:"redeem-url" cfg:"redeem_url"`
+	ProfileURL        string `flag:"profile-url" cfg:"profile_url"`
+	ProtectedResource string `flag:"resource" cfg:"resource"`
+	ValidateURL       string `flag:"validate-url" cfg:"validate_url"`
+	Scope             string `flag:"scope" cfg:"scope"`
+	RequestLogging    bool   `flag:"request-logging" cfg:"request_logging"`
 
-	RequestLogging bool `flag:"request-logging" cfg:"request_logging"`
-
-	SignatureKey string   `flag:"signature-key" cfg:"signature_key" env:"OAUTH2_PROXY_SIGNATURE_KEY"`
 	UpstreamCAs  []string `flag:"upstream-ca" cfg:"upstream_ca"`
+	SignatureKey string   `flag:"signature-key" cfg:"signature_key" env:"OAUTH2_PROXY_SIGNATURE_KEY"`
 
 	// internal values that are set after config validation
 	redirectURL       *url.URL
@@ -93,6 +105,7 @@ type Options struct {
 	CompiledSkipRegex []*regexp.Regexp
 	provider          providers.Provider
 	signatureData     *SignatureData
+	oidcVerifier      *oidc.IDTokenVerifier
 }
 
 type SignatureData struct {
@@ -134,41 +147,9 @@ func parseURL(to_parse string, urltype string, msgs []string) (*url.URL, []strin
 	return parsed, msgs
 }
 
-func (o *Options) Validate(p providers.Provider) error {
+func (o *Options) Validate() error {
 	msgs := make([]string, 0)
-
 	// allow the provider to default some values
-	switch provider := p.(type) {
-	case *openshift.OpenShiftProvider:
-		defaults, err := provider.LoadDefaults(o.OpenShiftServiceAccount, o.OpenShiftCAs, o.OpenShiftSAR, o.OpenShiftSARByHost, o.OpenShiftDelegateURLs)
-		if err != nil {
-			return err
-		}
-		if len(o.ClientID) == 0 {
-			o.ClientID = defaults.ClientID
-		}
-		if len(o.ClientSecret) == 0 {
-			o.ClientSecret = defaults.ClientSecret
-		}
-		if len(o.Scope) == 0 {
-			o.Scope = defaults.Scope
-		}
-		if len(o.LoginURL) == 0 && defaults.LoginURL != nil {
-			o.LoginURL = defaults.LoginURL.String()
-		}
-		if len(o.RedeemURL) == 0 && defaults.RedeemURL != nil {
-			o.RedeemURL = defaults.RedeemURL.String()
-		}
-		if len(o.ValidateURL) == 0 && defaults.ValidateURL != nil {
-			o.ValidateURL = defaults.ValidateURL.String()
-		}
-		if len(o.EmailDomains) == 0 {
-			o.EmailDomains = []string{"*"}
-		}
-		if len(o.RedirectURL) == 0 {
-			o.RedirectURL = "https:///"
-		}
-	}
 
 	if o.CookieSecretFile != "" {
 		if contents, err := ioutil.ReadFile(o.CookieSecretFile); err != nil {
@@ -200,7 +181,6 @@ func (o *Options) Validate(p providers.Provider) error {
 	if o.AuthenticatedEmailsFile == "" && len(o.EmailDomains) == 0 && o.HtpasswdFile == "" {
 		msgs = append(msgs, "missing setting for email validation: email-domain or authenticated-emails-file required.\n      use email-domain=* to authorize all email addresses")
 	}
-
 	o.redirectURL, msgs = parseURL(o.RedirectURL, "redirect", msgs)
 
 	o.proxyURLs = nil
@@ -252,6 +232,7 @@ func (o *Options) Validate(p providers.Provider) error {
 		}
 		o.CompiledSkipRegex = append(o.CompiledSkipRegex, CompiledRegex)
 	}
+	msgs = parseProviderInfo(o, msgs)
 
 	if o.PassAccessToken || (o.CookieRefresh != time.Duration(0)) {
 		valid_cookie_secret_size := false
@@ -299,19 +280,14 @@ func (o *Options) Validate(p providers.Provider) error {
 		}
 		http.DefaultClient = &http.Client{Transport: insecureTransport}
 	}
-
-	msgs = append(msgs, o.validateProvider(p)...)
 	if len(msgs) != 0 {
 		return fmt.Errorf("Invalid configuration:\n  %s",
 			strings.Join(msgs, "\n  "))
 	}
-	o.provider = p
-
 	return nil
 }
 
-func (o *Options) validateProvider(provider providers.Provider) []string {
-	var msgs []string
+func parseProviderInfo(o *Options, msgs []string) []string {
 	data := &providers.ProviderData{
 		Scope:          o.Scope,
 		ClientID:       o.ClientID,
@@ -322,19 +298,85 @@ func (o *Options) validateProvider(provider providers.Provider) []string {
 	data.RedeemURL, msgs = parseURL(o.RedeemURL, "redeem", msgs)
 	data.ProfileURL, msgs = parseURL(o.ProfileURL, "profile", msgs)
 	data.ValidateURL, msgs = parseURL(o.ValidateURL, "validate", msgs)
-	if len(msgs) != 0 {
-		return msgs
-	}
+	data.ProtectedResource, msgs = parseURL(o.ProtectedResource, "resource", msgs)
 
-	switch p := provider.(type) {
+	o.provider = providers.New(o.Provider, data)
+	switch p := o.provider.(type) {
 	case *openshift.OpenShiftProvider:
-		var reviewURL *url.URL
-		reviewURL, msgs = parseURL(o.OpenShiftReviewURL, "openshift-review", msgs)
-		if len(msgs) != 0 {
-			return msgs
+		defaults, err := p.LoadDefaults(o.OpenShiftServiceAccount, o.OpenShiftCAs, o.OpenShiftSAR, o.OpenShiftSARByHost, o.OpenShiftDelegateURLs)
+		if err != nil {
+			msgs = append(msgs, "couldn't load openshift provider defaults: "+err.Error())
 		}
-		if err := p.Complete(data, reviewURL); err != nil {
-			msgs = append(msgs, fmt.Sprintf("unable to load OpenShift configuration: %v", err))
+		if len(o.ClientID) == 0 {
+			o.ClientID = defaults.ClientID
+		}
+		if len(o.ClientSecret) == 0 {
+			o.ClientSecret = defaults.ClientSecret
+		}
+		if len(o.Scope) == 0 {
+			o.Scope = defaults.Scope
+		}
+		if len(o.LoginURL) == 0 && defaults.LoginURL != nil {
+			o.LoginURL = defaults.LoginURL.String()
+		}
+		if len(o.RedeemURL) == 0 && defaults.RedeemURL != nil {
+			o.RedeemURL = defaults.RedeemURL.String()
+		}
+		if len(o.ValidateURL) == 0 && defaults.ValidateURL != nil {
+			o.ValidateURL = defaults.ValidateURL.String()
+		}
+		if len(o.EmailDomains) == 0 {
+			o.EmailDomains = []string{"*"}
+		}
+		if len(o.RedirectURL) == 0 {
+			o.RedirectURL = "https:///"
+		}
+
+	case *providers.AzureProvider:
+		p.Configure(o.AzureTenant)
+	case *providers.GitHubProvider:
+		p.SetOrgTeam(o.GitHubOrg, o.GitHubTeam)
+	case *providers.GoogleProvider:
+		if len(o.GoogleGroups) > 0 || o.GoogleAdminEmail != "" || o.GoogleServiceAccountJSON != "" {
+			if len(o.GoogleGroups) < 1 {
+				msgs = append(msgs, "missing setting: google-group")
+			}
+			if o.GoogleAdminEmail == "" {
+				msgs = append(msgs, "missing setting: google-admin-email")
+			}
+			if o.GoogleServiceAccountJSON == "" {
+				msgs = append(msgs, "missing setting: google-service-account-json")
+			}
+		}
+		if o.GoogleServiceAccountJSON != "" {
+			file, err := os.Open(o.GoogleServiceAccountJSON)
+			if err != nil {
+				msgs = append(msgs, "invalid Google credentials file: "+o.GoogleServiceAccountJSON)
+			} else {
+				p.SetGroupRestriction(o.GoogleGroups, o.GoogleAdminEmail, file)
+			}
+		}
+	case *providers.OIDCProvider:
+		if o.OIDCIssuerURL != "" {
+			// Configure discoverable provider data.
+			provider, err := oidc.NewProvider(context.Background(), o.OIDCIssuerURL)
+			if err != nil {
+				msgs = append(msgs, err.Error())
+			}
+			o.oidcVerifier = provider.Verifier(&oidc.Config{
+				ClientID: o.ClientID,
+			})
+			o.LoginURL = provider.Endpoint().AuthURL
+			o.RedeemURL = provider.Endpoint().TokenURL
+			if o.Scope == "" {
+				o.Scope = "openid email profile"
+			}
+		}
+
+		if o.oidcVerifier == nil {
+			msgs = append(msgs, "oidc provider requires an oidc issuer URL")
+		} else {
+			p.Verifier = o.oidcVerifier
 		}
 	case *providers.ProviderData:
 		p.Scope = data.Scope
