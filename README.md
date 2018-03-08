@@ -1,3 +1,10 @@
+# oauth-proxy fork
+This is a fork of https://github.com/openshift/oauth-proxy with the providers
+from https://github.com/bitly/oauth2_proxy added back, so it's possible to use
+this outside of OpenShift.
+
+---
+
 OpenShift oauth-proxy
 =====================
 
