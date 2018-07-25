@@ -13,6 +13,7 @@
 %global provider_prefix	%{provider}.%{provider_tld}/%{project}/%{repo}
 %global import_path	%{provider_prefix}
 %global build_gopath    %{_builddir}/%{repo}-gopath
+%global source https://%{provider_prefix}/archive/%{repo}
 
 Name:		golang-%{provider}-%{project}-%{repo}
 Version:	2.3
@@ -20,7 +21,7 @@ Release:	1.%{?dist}
 Summary:	A reverse proxy that provides authentication with OpenShift and other OAuth providers
 License:	MIT
 URL:		https://%{provider}.%{provider_tld}/%{project}/%{repo}
-Source0:	https://%{provider_prefix}/archive/%{repo}.tar.gz
+Source0:	${source}.tar.gz
 
 # e.g. el6 has ppc64 arch without gcc-go, so EA tag is required
 ExclusiveArch:  %{?go_arches:%{go_arches}}%{!?go_arches:%{ix86} x86_64 aarch64 %{arm} ppc64le s390x}
@@ -32,11 +33,11 @@ Provides:       %{repo} = %{version}-%{release}
 %{summary}
 
 %prep
-%setup -q -n %{repo}
+%setup -q -n %{source}
 
 %build
 mkdir -p %{build_gopath}/src/%{provider}.%{provider_tld}/%{project}
-ln -s %(pwd) %{build_gopath}/src/%{import_path}
+ln -s %{_builddir}/%{source} %{build_gopath}/src/%{import_path}
 
 # Ensure the default GOBIN is used ${GOPATH}/bin
 unset GOBIN
