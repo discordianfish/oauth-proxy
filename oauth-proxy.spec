@@ -12,17 +12,15 @@
 # github.com/openshift/oauth-proxy
 %global provider_prefix	%{provider}.%{provider_tld}/%{project}/%{repo}
 %global import_path	%{provider_prefix}
-%global commit		57b6863264c89307830fccadf2f122e5cea3d2a0
-%global shortcommit	%(c=%{commit}; echo ${c:0:8})
-%global build_gopath    %{_builddir}/%{repo}-%{shortcommit}-gopath
+%global build_gopath    %{_builddir}/%{repo}-gopath
 
 Name:		golang-%{provider}-%{project}-%{repo}
 Version:	2.3
-Release:	1.git%{shortcommit}%{?dist}
+Release:	1.%{?dist}
 Summary:	A reverse proxy that provides authentication with OpenShift and other OAuth providers
 License:	MIT
 URL:		https://%{provider}.%{provider_tld}/%{project}/%{repo}
-Source0:	https://%{provider_prefix}/archive/%{commit}/%{repo}-%{commit}.tar.gz
+Source0:	https://%{provider_prefix}/archive/%{repo}.tar.gz
 
 # e.g. el6 has ppc64 arch without gcc-go, so EA tag is required
 ExclusiveArch:  %{?go_arches:%{go_arches}}%{!?go_arches:%{ix86} x86_64 aarch64 %{arm} ppc64le s390x}
@@ -34,11 +32,11 @@ Provides:       %{repo} = %{version}-%{release}
 %{summary}
 
 %prep
-%setup -q -n %{repo}-%{commit}
+%setup -q -n %{repo}
 
 %build
 mkdir -p %{build_gopath}/src/%{provider}.%{provider_tld}/%{project}
-ln -s ../../../../%{repo}-%{commit} %{build_gopath}/src/%{import_path}
+ln -s ../../../../%{repo} %{build_gopath}/src/%{import_path}
 
 # Ensure the default GOBIN is used ${GOPATH}/bin
 unset GOBIN
@@ -48,7 +46,7 @@ export LDFLAGS='-s -w'
 
 %install
 install -d %{buildroot}%{_bindir}
-install -D -p -m 0755 %{_builddir}/%{repo}-%{commit}/%{repo} %{buildroot}/%{_bindir}/%{repo}
+install -D -p -m 0755 %{_builddir}/%{repo}/%{repo} %{buildroot}/%{_bindir}/%{repo}
 
 %files
 %license LICENSE
