@@ -36,7 +36,7 @@ Provides:       %{repo} = %{version}-%{release}
 
 %build
 mkdir -p %{build_gopath}/src/%{provider}.%{provider_tld}/%{project}
-ln -s ../../../../%{repo} %{build_gopath}/src/%{import_path}
+ln -s %(pwd) %{build_gopath}/src/%{import_path}
 
 # Ensure the default GOBIN is used ${GOPATH}/bin
 unset GOBIN
