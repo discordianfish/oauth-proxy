@@ -63,7 +63,7 @@ export LDFLAGS='-s -w'
 
 %install
 install -d %{buildroot}%{_bindir}
-install -D -p -m 0755 %{_builddir}/%{repo}/%{repo} %{buildroot}/%{_bindir}/%{repo}
+install -D -p -m 0755 %{repo} %{buildroot}/%{_bindir}/%{repo}
 
 %files
 %license LICENSE
