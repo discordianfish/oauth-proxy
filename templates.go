@@ -95,6 +95,20 @@ func getTemplates() *template.Template {
       line-height: 1.3333333;
       padding: 6px 10px;
     }
+    .btn-default {
+      background-color: #f1f1f1;
+      background-image: linear-gradient(to bottom,#fafafa 0,#ededed 100%);
+      background-repeat: repeat-x;
+      border-color: #bbb;
+      color: #4d5258;
+    }
+    .btn-default:focus,
+    .btn-default:hover {
+      background-color: #f1f1f1;
+      background-image: none;
+      border-color: #bbb;
+      color: #4d5258;
+    }
     .btn-primary {
       background-color: #0088ce;
       background-image: linear-gradient(to bottom,#39a5dc 0,#0088ce 100%);
@@ -205,6 +219,7 @@ func getTemplates() *template.Template {
       display: inline-block;
       margin-bottom: 5px;
       font-weight: bold;
+      color: #676767;
     }
     .panel-content {
       padding: 0 20px;
@@ -233,12 +248,22 @@ func getTemplates() *template.Template {
     }
     @media (min-width: 768px) {
       .panel-login {
-        margin-top: 165px;
+        margin-top: 150px;
         padding: 50px 0;
       }
     }
     .panel-login + .panel-login {
-      margin-top: 0;
+      margin-top: 50px;
+    }
+    .panel-login-internal {
+      box-shadow: none;
+      background: #ededed;
+      border: 1px solid #e0e0e0;
+    }
+    @media (min-width: 768px) {
+      .panel-login-internal {
+        padding: 50px;
+      }
     }
     .panel-logos {
       display: flex;
@@ -265,7 +290,7 @@ func getTemplates() *template.Template {
     </div>
   </div>
   {{ if .CustomLogin }}
-    <div class="panel-login">
+    <div class="panel-login panel-login-internal">
       <div class="panel-content">
         <form method="POST" action="{{.ProxyPrefix}}/sign_in">
           <input type="hidden" name="rd" value="{{.Redirect}}">
@@ -277,7 +302,7 @@ func getTemplates() *template.Template {
             <label for="password">Password</label>
             <input type="password" name="password" id="password" class="form-control">
           </div>
-          <button type="submit" class="btn btn-lg btn-primary">Log In</button>
+          <button type="submit" class="btn btn-lg btn-default">Log In</button>
         </form>
       </div>
     </div>
