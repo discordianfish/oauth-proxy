@@ -9,12 +9,13 @@ items:
     annotations:
       serviceaccounts.openshift.io/oauth-redirectreference.primary: '{"kind":"OAuthRedirectReference","apiVersion":"v1","reference":{"kind":"Route","name":"proxy"}}'
 # Create a secure connection to the proxy via a route
-- apiVersion: route.openshift.io/v1
+- apiVersion: v1
   kind: Route
   metadata:
     name: proxy
   spec:
     to:
+      kind: Service
       name: proxy
     tls:
       termination: Reencrypt
@@ -32,7 +33,7 @@ items:
     selector:
       app: proxy
 # Launch a proxy as a sidecar
-- apiVersion: extensions/v1beta1
+- apiVersion: apps/v1
   kind: Deployment
   metadata:
     name: proxy
@@ -49,7 +50,7 @@ items:
         serviceAccountName: proxy
         containers:
         - name: oauth-proxy
-          image: openshift/oauth-proxy:v1.0.0
+          image: openshift/oauth-proxy:latest
           imagePullPolicy: IfNotPresent
           ports:
           - containerPort: 8443
