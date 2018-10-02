@@ -31,7 +31,7 @@ type Options struct {
 	ClientSecretFile string        `flag:"client-secret-file" cfg:"client_secret_file" env:"OAUTH2_PROXY_CLIENT_SECRET_FILE"`
 	TLSCertFile      string        `flag:"tls-cert" cfg:"tls_cert_file"`
 	TLSKeyFile       string        `flag:"tls-key" cfg:"tls_key_file"`
-	TLSClientCAFiles []string      `flag:"tls-client-ca" cfg:"tls_client_ca"`
+	TLSClientCAFile  string        `flag:"tls-client-ca" cfg:"tls_client_ca"`
 
 	AuthenticatedEmailsFile string   `flag:"authenticated-emails-file" cfg:"authenticated_emails_file"`
 	EmailDomains            []string `flag:"email-domain" cfg:"email_domains"`
@@ -286,7 +286,7 @@ func (o *Options) Validate(p providers.Provider) error {
 			o.CookieExpire.String()))
 	}
 
-	if len(o.TLSClientCAFiles) > 0 && len(o.TLSKeyFile) == 0 && len(o.TLSCertFile) == 0 {
+	if len(o.TLSClientCAFile) > 0 && len(o.TLSKeyFile) == 0 && len(o.TLSCertFile) == 0 {
 		msgs = append(msgs, "tls-client-ca requires tls-key-file or tls-cert-file to be set to listen on tls")
 	}
 

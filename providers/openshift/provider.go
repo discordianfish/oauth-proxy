@@ -56,6 +56,10 @@ func New() *OpenShiftProvider {
 	return p
 }
 
+func (p *OpenShiftProvider) SetClientCAFile(file string) {
+	p.AuthenticationOptions.ClientCert.ClientCA = file
+}
+
 func (p *OpenShiftProvider) Bind(flags *flag.FlagSet) {
 	p.AuthenticationOptions.AddFlags(flags)
 	p.AuthorizationOptions.AddFlags(flags)

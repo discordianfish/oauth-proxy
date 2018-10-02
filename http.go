@@ -81,9 +81,9 @@ func (s *Server) ServeHTTPS() {
 		log.Fatalf("FATAL: loading tls config (%s, %s) failed - %s", s.Opts.TLSCertFile, s.Opts.TLSKeyFile, err)
 	}
 
-	if len(s.Opts.TLSClientCAFiles) > 0 {
+	if len(s.Opts.TLSClientCAFile) > 0 {
 		config.ClientAuth = tls.RequestClientCert
-		config.ClientCAs, err = util.GetCertPool(s.Opts.TLSClientCAFiles, false)
+		config.ClientCAs, err = util.GetCertPool([]string{s.Opts.TLSClientCAFile}, false)
 		if err != nil {
 			log.Fatalf("FATAL: %s", err)
 		}
