@@ -27,7 +27,7 @@ func main() {
 	bypassAuthRegex := StringArray{}
 	bypassAuthExceptRegex := StringArray{}
 	openshiftCAs := StringArray{}
-	clientCAs := StringArray{}
+	clientCA := ""
 	upstreamCAs := StringArray{}
 
 	config := flagSet.String("config", "", "path to config file")
@@ -38,7 +38,7 @@ func main() {
 	flagSet.Duration("upstream-flush", time.Duration(5)*time.Millisecond, "force flush upstream responses after this duration(useful for streaming responses). 0 to never force flush. Defaults to 5ms")
 	flagSet.String("tls-cert", "", "path to certificate file")
 	flagSet.String("tls-key", "", "path to private key file")
-	flagSet.Var(&clientCAs, "tls-client-ca", "paths to CA roots for trusted client certificates for admitting clients (may be given multiple times).")
+	flagSet.StringVar(&clientCA, "tls-client-ca", clientCA, "path to a CA file for admitting client certificates.")
 	flagSet.String("redirect-url", "", "the OAuth Redirect URL. ie: \"https://internalapp.yourcompany.com/oauth/callback\"")
 	flagSet.Bool("set-xauthrequest", false, "set X-Auth-Request-User and X-Auth-Request-Email response headers (useful in Nginx auth_request mode)")
 	flagSet.Var(&upstreams, "upstream", "the http url(s) of the upstream endpoint or file:// paths for static files. Routing is based on the path")
@@ -100,6 +100,7 @@ func main() {
 
 	providerOpenShift := openshift.New()
 	providerOpenShift.Bind(flagSet)
+	providerOpenShift.SetClientCAFile(clientCA)
 
 	flagSet.Parse(os.Args[1:])
 
@@ -109,6 +110,7 @@ func main() {
 	}
 
 	opts := NewOptions()
+	opts.TLSClientCAFile = clientCA
 
 	cfg := make(EnvOptions)
 	if *config != "" {

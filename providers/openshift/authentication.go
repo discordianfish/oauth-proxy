@@ -74,13 +74,6 @@ type ClientCertAuthenticationOptions struct {
 	ClientCA string
 }
 
-func (s *ClientCertAuthenticationOptions) AddFlags(fs *flag.FlagSet) {
-	fs.StringVar(&s.ClientCA, "client-ca-file", s.ClientCA, ""+
-		"If set, any request presenting a client certificate signed by one of "+
-		"the authorities in the client-ca-file is authenticated with an identity "+
-		"corresponding to the CommonName of the client certificate.")
-}
-
 // DelegatingAuthenticationOptions provides an easy way for composing API servers to delegate their authentication to
 // the root kube API server.  The API federator will act as
 // a front proxy and direction connections will be able to delegate to the core kube API server
@@ -124,7 +117,6 @@ func (s *DelegatingAuthenticationOptions) AddFlags(fs *flag.FlagSet) {
 	fs.DurationVar(&s.CacheTTL, "authentication-token-webhook-cache-ttl", s.CacheTTL,
 		"The duration to cache responses from the webhook token authenticator.")
 
-	s.ClientCert.AddFlags(fs)
 	s.RequestHeader.AddFlags(fs)
 }
 
