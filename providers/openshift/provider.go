@@ -87,7 +87,7 @@ func (p *OpenShiftProvider) LoadDefaults(serviceAccount string, caPaths []string
 	}
 	p.hostreviews = hostreviews
 
-	if err := p.setCA(caPaths); err != nil {
+	if err := p.setCAandTransportProxy(caPaths); err != nil {
 		return nil, err
 	}
 
@@ -125,7 +125,7 @@ func (p *OpenShiftProvider) LoadDefaults(serviceAccount string, caPaths []string
 }
 
 // SetCA initializes the client used for connecting to the master.
-func (p *OpenShiftProvider) setCA(paths []string) error {
+func (p *OpenShiftProvider) setCAandTransportProxy(paths []string) error {
 	if p.Client == nil {
 		p.Client = &http.Client{
 			Jar:       http.DefaultClient.Jar,
@@ -144,6 +144,7 @@ func (p *OpenShiftProvider) setCA(paths []string) error {
 		return err
 	}
 	p.Client.Transport = &http.Transport{
+		Proxy: http.ProxyFromEnvironment,
 		TLSClientConfig: &tls.Config{
 			RootCAs: pool,
 		},
