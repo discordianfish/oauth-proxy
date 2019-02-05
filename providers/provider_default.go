@@ -12,7 +12,7 @@ import (
 	"github.com/openshift/oauth-proxy/cookie"
 )
 
-func (p *ProviderData) Redeem(redirectURL, code string) (s *SessionState, err error) {
+func (p *ProviderData) Redeem(redeemURL *url.URL, redirectURL, code string) (s *SessionState, err error) {
 	if code == "" {
 		err = errors.New("missing code")
 		return
@@ -29,7 +29,7 @@ func (p *ProviderData) Redeem(redirectURL, code string) (s *SessionState, err er
 	}
 
 	var req *http.Request
-	req, err = http.NewRequest("POST", p.RedeemURL.String(), bytes.NewBufferString(params.Encode()))
+	req, err = http.NewRequest("POST", redeemURL.String(), bytes.NewBufferString(params.Encode()))
 	if err != nil {
 		return
 	}
@@ -48,7 +48,7 @@ func (p *ProviderData) Redeem(redirectURL, code string) (s *SessionState, err er
 	}
 
 	if resp.StatusCode != 200 {
-		err = fmt.Errorf("got %d from %q %s", resp.StatusCode, p.RedeemURL.String(), body)
+		err = fmt.Errorf("got %d from %q %s", resp.StatusCode, redeemURL.String(), body)
 		return
 	}
 
@@ -77,19 +77,17 @@ func (p *ProviderData) Redeem(redirectURL, code string) (s *SessionState, err er
 	return
 }
 
-// GetLoginURL with typical oauth parameters
-func (p *ProviderData) GetLoginURL(redirectURI, state string) string {
-	var a url.URL
-	a = *p.LoginURL
-	params, _ := url.ParseQuery(a.RawQuery)
+// GetLoginRedirectURL with typical oauth parameters
+func (p *ProviderData) GetLoginRedirectURL(loginURL url.URL, redirectURI, state string) string {
+	params, _ := url.ParseQuery(loginURL.RawQuery)
 	params.Set("redirect_uri", redirectURI)
 	params.Set("approval_prompt", p.ApprovalPrompt)
 	params.Add("scope", p.Scope)
 	params.Set("client_id", p.ClientID)
 	params.Set("response_type", "code")
 	params.Add("state", state)
-	a.RawQuery = params.Encode()
-	return a.String()
+	loginURL.RawQuery = params.Encode()
+	return loginURL.String()
 }
 
 // CookieForSession serializes a session state for storage in a cookie
@@ -106,7 +104,7 @@ func (p *ProviderData) GetEmailAddress(s *SessionState) (string, error) {
 	return "", errors.New("not implemented")
 }
 
-func (p *ProviderData) ReviewUser(name, accessToken, host string) (error) {
+func (p *ProviderData) ReviewUser(name, accessToken, host string) error {
 	return nil
 }
 
@@ -127,4 +125,24 @@ func (p *ProviderData) ValidateSessionState(s *SessionState) bool {
 // RefreshSessionIfNeeded
 func (p *ProviderData) RefreshSessionIfNeeded(s *SessionState) (bool, error) {
 	return false, nil
+}
+
+func (p *ProviderData) GetLoginURL() *url.URL {
+	if !(p.ConfigLoginURL == nil || p.ConfigLoginURL.String() == "") {
+		return p.ConfigLoginURL
+	}
+
+	return p.LoginURL
+}
+
+func (p *ProviderData) GetRedeemURL() *url.URL {
+	if !(p.ConfigRedeemURL == nil || p.ConfigRedeemURL.String() == "") {
+		return p.ConfigRedeemURL
+	}
+	return p.RedeemURL
+}
+
+func (p *ProviderData) ClearEndpointsCache() {
+	p.LoginURL = nil
+	p.RedeemURL = nil
 }
