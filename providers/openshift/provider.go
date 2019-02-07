@@ -114,13 +114,8 @@ func (p *OpenShiftProvider) LoadDefaults(serviceAccount string, caPaths []string
 		return defaults, nil
 	}
 	// provide default URLs
-	if !emptyURL(defaults.LoginURL) {
-		defaults.ValidateURL = &url.URL{
-			Scheme: defaults.LoginURL.Scheme,
-			Host:   defaults.LoginURL.Host,
-			Path:   "/apis/user.openshift.io/v1/users/~",
-		}
-	}
+	defaults.ValidateURL = getKubeAPIURLWithPath("/apis/user.openshift.io/v1/users/~")
+
 	return defaults, nil
 }
 
@@ -288,14 +283,7 @@ func parseResources(resources string) (recordsByPath, error) {
 // Complete performs final setup on the provider or returns an error.
 func (p *OpenShiftProvider) Complete(data *providers.ProviderData, reviewURL *url.URL) error {
 	if emptyURL(reviewURL) {
-		if emptyURL(data.LoginURL) {
-			return fmt.Errorf("--openshift-review-url must be specified")
-		}
-		reviewURL = &url.URL{
-			Scheme: data.LoginURL.Scheme,
-			Host:   data.LoginURL.Host,
-			Path:   "/apis/authorization.openshift.io/v1/subjectaccessreviews",
-		}
+		reviewURL = getKubeAPIURLWithPath("/apis/authorization.openshift.io/v1/subjectaccessreviews")
 	}
 
 	p.ProviderData = data
@@ -523,11 +511,7 @@ func (p *OpenShiftProvider) Redeem(redirectURL, code string) (s *providers.Sessi
 }
 
 func discoverOpenShiftOAuth(provider *providers.ProviderData, client *http.Client) error {
-	host := os.Getenv("KUBERNETES_SERVICE_HOST")
-	if len(host) == 0 {
-		host = "kubernetes.default.svc"
-	}
-	wellKnownAuthorization := &url.URL{Scheme: "https", Host: host, Path: "/.well-known/oauth-authorization-server"}
+	wellKnownAuthorization := getKubeAPIURLWithPath("/.well-known/oauth-authorization-server")
 	log.Printf("Performing OAuth discovery against %s", wellKnownAuthorization)
 	req, err := http.NewRequest("GET", wellKnownAuthorization.String(), nil)
 	if err != nil {
@@ -586,4 +570,18 @@ func request(client *http.Client, req *http.Request) (*simplejson.Json, error) {
 		return nil, err
 	}
 	return data, nil
+}
+
+func getKubeAPIURLWithPath(path string) *url.URL {
+	ret := &url.URL{
+		Scheme: "https",
+		Host:   "kubernetes.default.svc",
+		Path:   path,
+	}
+
+	if host := os.Getenv("KUBERNETES_SERVICE_HOST"); len(host) > 0 {
+		ret.Host = host
+	}
+
+	return ret
 }
