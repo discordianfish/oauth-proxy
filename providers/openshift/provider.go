@@ -441,7 +441,7 @@ func (p *OpenShiftProvider) ReviewUser(name, accessToken, host string) error {
 }
 
 // Copied up only to set a different client CA
-func (p *OpenShiftProvider) Redeem(redirectURL, code string) (s *providers.SessionState, err error) {
+func (p *OpenShiftProvider) Redeem(redeemURL *url.URL, redirectURL, code string) (s *providers.SessionState, err error) {
 	if code == "" {
 		err = errors.New("missing code")
 		return
@@ -462,7 +462,7 @@ func (p *OpenShiftProvider) Redeem(redirectURL, code string) (s *providers.Sessi
 	}
 
 	var req *http.Request
-	req, err = http.NewRequest("POST", p.RedeemURL.String(), bytes.NewBufferString(params.Encode()))
+	req, err = http.NewRequest("POST", redeemURL.String(), bytes.NewBufferString(params.Encode()))
 	if err != nil {
 		return
 	}
@@ -481,7 +481,7 @@ func (p *OpenShiftProvider) Redeem(redirectURL, code string) (s *providers.Sessi
 	}
 
 	if resp.StatusCode != 200 {
-		err = fmt.Errorf("got %d from %q %s", resp.StatusCode, p.RedeemURL.String(), body)
+		err = fmt.Errorf("got %d from %q %s", resp.StatusCode, redeemURL.String(), body)
 		return
 	}
 
@@ -510,6 +510,33 @@ func (p *OpenShiftProvider) Redeem(redirectURL, code string) (s *providers.Sessi
 	return
 }
 
+func (p *OpenShiftProvider) GetLoginURL() *url.URL {
+	if !emptyURL(p.ConfigLoginURL) {
+		return p.ConfigLoginURL
+	}
+
+	if emptyURL(p.LoginURL) {
+		// clear the endpoints so that we get all the newly discovered endpoints for all
+		p.ClearEndpointsCache()
+		discoverOpenShiftOAuth(p.ProviderData, p.Client)
+	}
+	return p.LoginURL
+}
+
+func (p *OpenShiftProvider) GetRedeemURL() *url.URL {
+	if !emptyURL(p.ConfigRedeemURL) {
+		return p.ConfigRedeemURL
+	}
+
+	if emptyURL(p.RedeemURL) {
+		// clear the endpoints so that we get all the newly discovered endpoints
+		p.ClearEndpointsCache()
+		discoverOpenShiftOAuth(p.ProviderData, p.Client)
+	}
+	return p.RedeemURL
+}
+
+// discoverOpenshiftOAuth sets the LoginURL and RedeemURL of the supplied ProviderData if they are unset or empty
 func discoverOpenShiftOAuth(provider *providers.ProviderData, client *http.Client) error {
 	wellKnownAuthorization := getKubeAPIURLWithPath("/.well-known/oauth-authorization-server")
 	log.Printf("Performing OAuth discovery against %s", wellKnownAuthorization)

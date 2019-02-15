@@ -153,12 +153,6 @@ func (o *Options) Validate(p providers.Provider) error {
 		if len(o.Scope) == 0 {
 			o.Scope = defaults.Scope
 		}
-		if len(o.LoginURL) == 0 && defaults.LoginURL != nil {
-			o.LoginURL = defaults.LoginURL.String()
-		}
-		if len(o.RedeemURL) == 0 && defaults.RedeemURL != nil {
-			o.RedeemURL = defaults.RedeemURL.String()
-		}
 		if len(o.ValidateURL) == 0 && defaults.ValidateURL != nil {
 			o.ValidateURL = defaults.ValidateURL.String()
 		}
@@ -318,8 +312,9 @@ func (o *Options) validateProvider(provider providers.Provider) []string {
 		ClientSecret:   o.ClientSecret,
 		ApprovalPrompt: o.ApprovalPrompt,
 	}
-	data.LoginURL, msgs = parseURL(o.LoginURL, "login", msgs)
-	data.RedeemURL, msgs = parseURL(o.RedeemURL, "redeem", msgs)
+	data.ConfigLoginURL, msgs = parseURL(o.LoginURL, "login", msgs)
+	data.ConfigRedeemURL, msgs = parseURL(o.RedeemURL, "redeem", msgs)
+
 	data.ProfileURL, msgs = parseURL(o.ProfileURL, "profile", msgs)
 	data.ValidateURL, msgs = parseURL(o.ValidateURL, "validate", msgs)
 	if len(msgs) != 0 {

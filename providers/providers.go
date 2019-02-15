@@ -3,6 +3,7 @@ package providers
 import (
 	"errors"
 	"net/http"
+	"net/url"
 
 	"github.com/openshift/oauth-proxy/cookie"
 )
@@ -10,16 +11,19 @@ import (
 type Provider interface {
 	Data() *ProviderData
 
-	ReviewUser(name, accessToken, host string) (error)
+	ReviewUser(name, accessToken, host string) error
 	GetEmailAddress(*SessionState) (string, error)
-	Redeem(string, string) (*SessionState, error)
+	Redeem(*url.URL, string, string) (*SessionState, error)
 	ValidateGroup(string) bool
 	ValidateSessionState(*SessionState) bool
-	GetLoginURL(redirectURI, finalRedirect string) string
+	GetLoginRedirectURL(loginURL url.URL, redirectURI, state string) string
 	RefreshSessionIfNeeded(*SessionState) (bool, error)
 	SessionFromCookie(string, *cookie.Cipher) (*SessionState, error)
 	CookieForSession(*SessionState, *cookie.Cipher) (string, error)
 	ValidateRequest(*http.Request) (*SessionState, error)
+	GetLoginURL() *url.URL
+	GetRedeemURL() *url.URL
+	ClearEndpointsCache()
 }
 
 // ErrPermissionDenied may be returned from Redeem() to indicate the user is not allowed to login.
