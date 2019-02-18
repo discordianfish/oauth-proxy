@@ -185,12 +185,12 @@ func NewTestProvider(provider_url *url.URL, email_address string) *TestProvider 
 	return &TestProvider{
 		ProviderData: &providers.ProviderData{
 			ProviderName: "Test Provider",
-			LoginURL: &url.URL{
+			ConfigLoginURL: &url.URL{
 				Scheme: "http",
 				Host:   provider_url.Host,
 				Path:   "/oauth/authorize",
 			},
-			RedeemURL: &url.URL{
+			ConfigRedeemURL: &url.URL{
 				Scheme: "http",
 				Host:   provider_url.Host,
 				Path:   "/oauth/token",

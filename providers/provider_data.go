@@ -8,12 +8,8 @@ type ProviderData struct {
 	ProviderName string
 	ClientID     string
 	ClientSecret string
-	// LoginURL, RedeemURL are cached in runtime, only set/unset
-	// them in cache-related methods
-	LoginURL  *url.URL
-	RedeemURL *url.URL
-	// Config* attributes are attributes that are set in options and override
-	// the cached attributes above
+	// Config* attributes are set in the options, if set, these endpoints won't
+	// be refetched
 	ConfigLoginURL    *url.URL
 	ConfigRedeemURL   *url.URL
 	ValidateURL       *url.URL

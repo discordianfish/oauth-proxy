@@ -319,9 +319,9 @@ func (p *OAuthProxy) redeemCode(host, code string) (s *providers.SessionState, e
 	}
 	redirectURI := p.GetRedirectURI(host)
 
-	redeemURL := p.provider.GetRedeemURL()
-	if redeemURL == nil {
-		return s, fmt.Errorf("unable to discover the redeeem endpoint")
+	redeemURL, err := p.provider.GetRedeemURL()
+	if err != nil {
+		return s, err
 	}
 	s, err = p.provider.Redeem(redeemURL, redirectURI, code)
 	if err != nil {
@@ -612,13 +612,10 @@ func (p *OAuthProxy) OAuthStart(rw http.ResponseWriter, req *http.Request) {
 		return
 	}
 
-	// clear cached endpoints, get fresh ones in case /.well-known/oauth-authorization-server changed its values
-	p.provider.ClearEndpointsCache()
-
 	redirectURI := p.GetRedirectURI(req.Host)
-	loginURL := p.provider.GetLoginURL()
-	if loginURL == nil {
-		p.ErrorPage(rw, 500, "Internal Error", fmt.Sprintf("could not get login endpoint"))
+	loginURL, err := p.provider.GetLoginURL()
+	if err != nil {
+		p.ErrorPage(rw, 500, "Internal Error", err.Error())
 		return
 	}
 	http.Redirect(rw, req, p.provider.GetLoginRedirectURL(*loginURL, redirectURI, fmt.Sprintf("%v:%v", nonce, redirect)), 302)

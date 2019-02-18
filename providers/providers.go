@@ -21,9 +21,8 @@ type Provider interface {
 	SessionFromCookie(string, *cookie.Cipher) (*SessionState, error)
 	CookieForSession(*SessionState, *cookie.Cipher) (string, error)
 	ValidateRequest(*http.Request) (*SessionState, error)
-	GetLoginURL() *url.URL
-	GetRedeemURL() *url.URL
-	ClearEndpointsCache()
+	GetLoginURL() (*url.URL, error)
+	GetRedeemURL() (*url.URL, error)
 }
 
 // ErrPermissionDenied may be returned from Redeem() to indicate the user is not allowed to login.
