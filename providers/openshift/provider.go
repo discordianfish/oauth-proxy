@@ -108,11 +108,6 @@ func (p *OpenShiftProvider) LoadDefaults(serviceAccount string, caPaths []string
 		}
 	}
 
-	// attempt to discover endpoints
-	if err := discoverOpenShiftOAuth(defaults, p.Client); err != nil {
-		log.Printf("Unable to discover default cluster OAuth info: %v", err)
-		return defaults, nil
-	}
 	// provide default URLs
 	defaults.ValidateURL = getKubeAPIURLWithPath("/apis/user.openshift.io/v1/users/~")
 
@@ -510,67 +505,54 @@ func (p *OpenShiftProvider) Redeem(redeemURL *url.URL, redirectURL, code string)
 	return
 }
 
-func (p *OpenShiftProvider) GetLoginURL() *url.URL {
+func (p *OpenShiftProvider) GetLoginURL() (*url.URL, error) {
 	if !emptyURL(p.ConfigLoginURL) {
-		return p.ConfigLoginURL
+		return p.ConfigLoginURL, nil
 	}
 
-	if emptyURL(p.LoginURL) {
-		// clear the endpoints so that we get all the newly discovered endpoints for all
-		p.ClearEndpointsCache()
-		discoverOpenShiftOAuth(p.ProviderData, p.Client)
-	}
-	return p.LoginURL
+	loginURL, _, err := discoverOpenShiftOAuth(p.Client)
+	return loginURL, err
 }
 
-func (p *OpenShiftProvider) GetRedeemURL() *url.URL {
+func (p *OpenShiftProvider) GetRedeemURL() (*url.URL, error) {
 	if !emptyURL(p.ConfigRedeemURL) {
-		return p.ConfigRedeemURL
+		return p.ConfigRedeemURL, nil
 	}
 
-	if emptyURL(p.RedeemURL) {
-		// clear the endpoints so that we get all the newly discovered endpoints
-		p.ClearEndpointsCache()
-		discoverOpenShiftOAuth(p.ProviderData, p.Client)
-	}
-	return p.RedeemURL
+	_, redeemURL, err := discoverOpenShiftOAuth(p.Client)
+	return redeemURL, err
 }
 
-// discoverOpenshiftOAuth sets the LoginURL and RedeemURL of the supplied ProviderData if they are unset or empty
-func discoverOpenShiftOAuth(provider *providers.ProviderData, client *http.Client) error {
+// discoverOpenshiftOAuth returns the urls of the login and code redeem endpoitns
+// it receives from the /.well-known/oauth-authorization-server endpoint
+func discoverOpenShiftOAuth(client *http.Client) (*url.URL, *url.URL, error) {
 	wellKnownAuthorization := getKubeAPIURLWithPath("/.well-known/oauth-authorization-server")
 	log.Printf("Performing OAuth discovery against %s", wellKnownAuthorization)
 	req, err := http.NewRequest("GET", wellKnownAuthorization.String(), nil)
 	if err != nil {
-		return err
+		return nil, nil, err
 	}
 	json, err := request(client, req)
 	if err != nil {
-		return err
+		return nil, nil, err
 	}
-	if emptyURL(provider.LoginURL) {
-		if value, err := json.Get("authorization_endpoint").String(); err == nil && len(value) > 0 {
-			if u, err := url.Parse(value); err == nil {
-				provider.LoginURL = u
-			} else {
-				log.Printf("Unable to parse 'authorization_endpoint' from %s: %v", wellKnownAuthorization, err)
-			}
-		} else {
-			log.Printf("No 'authorization_endpoint' provided by %s: %v", wellKnownAuthorization, err)
+
+	var loginURL, redeemURL *url.URL
+	if value, err := json.Get("authorization_endpoint").String(); err == nil && len(value) > 0 {
+		if loginURL, err = url.Parse(value); err != nil {
+			return nil, nil, fmt.Errorf("Unable to parse 'authorization_endpoint' from %s: %v", wellKnownAuthorization, err)
 		}
+	} else {
+		return nil, nil, fmt.Errorf("No 'authorization_endpoint' provided by %s: %v", wellKnownAuthorization, err)
 	}
-	if emptyURL(provider.RedeemURL) {
-		if value, err := json.Get("token_endpoint").String(); err == nil && len(value) > 0 {
-			if u, err := url.Parse(value); err == nil {
-				provider.RedeemURL = u
-			} else {
-				log.Printf("Unable to parse 'token_endpoint' from %s: %v", wellKnownAuthorization, err)
-			}
-		} else {
-			log.Printf("No 'token_endpoint' provided by %s: %v", wellKnownAuthorization, err)
+	if value, err := json.Get("token_endpoint").String(); err == nil && len(value) > 0 {
+		if redeemURL, err = url.Parse(value); err != nil {
+			return nil, nil, fmt.Errorf("Unable to parse 'token_endpoint' from %s: %v", wellKnownAuthorization, err)
 		}
+	} else {
+		return nil, nil, fmt.Errorf("No 'token_endpoint' provided by %s: %v", wellKnownAuthorization, err)
 	}
-	return nil
+	return loginURL, redeemURL, nil
 }
 
 // Copied to override http.Client so that CA can be set

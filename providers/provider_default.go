@@ -127,22 +127,18 @@ func (p *ProviderData) RefreshSessionIfNeeded(s *SessionState) (bool, error) {
 	return false, nil
 }
 
-func (p *ProviderData) GetLoginURL() *url.URL {
+func (p *ProviderData) GetLoginURL() (*url.URL, error) {
 	if !(p.ConfigLoginURL == nil || p.ConfigLoginURL.String() == "") {
-		return p.ConfigLoginURL
+		return p.ConfigLoginURL, nil
 	}
 
-	return p.LoginURL
+	return nil, fmt.Errorf("no login endpoint was configured")
 }
 
-func (p *ProviderData) GetRedeemURL() *url.URL {
+func (p *ProviderData) GetRedeemURL() (*url.URL, error) {
 	if !(p.ConfigRedeemURL == nil || p.ConfigRedeemURL.String() == "") {
-		return p.ConfigRedeemURL
+		return p.ConfigRedeemURL, nil
 	}
-	return p.RedeemURL
-}
 
-func (p *ProviderData) ClearEndpointsCache() {
-	p.LoginURL = nil
-	p.RedeemURL = nil
+	return nil, fmt.Errorf("no redeem endpoint was configured")
 }

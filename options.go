@@ -336,8 +336,8 @@ func (o *Options) validateProvider(provider providers.Provider) []string {
 		p.ClientID = data.ClientID
 		p.ClientSecret = data.ClientSecret
 		p.ApprovalPrompt = data.ApprovalPrompt
-		p.LoginURL = data.LoginURL
-		p.RedeemURL = data.RedeemURL
+		p.ConfigLoginURL = data.ConfigLoginURL
+		p.ConfigRedeemURL = data.ConfigRedeemURL
 		p.ProfileURL = data.ProfileURL
 		p.ValidateURL = data.ValidateURL
 	}
