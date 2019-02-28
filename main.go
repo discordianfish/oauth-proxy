@@ -101,6 +101,7 @@ func main() {
 	providerOpenShift := openshift.New()
 	providerOpenShift.Bind(flagSet)
 	providerOpenShift.SetClientCAFile(clientCA)
+	providerOpenShift.SetReviewCAs(openshiftCAs)
 
 	flagSet.Parse(os.Args[1:])
 

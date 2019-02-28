@@ -140,7 +140,7 @@ func (o *Options) Validate(p providers.Provider) error {
 	// allow the provider to default some values
 	switch provider := p.(type) {
 	case *openshift.OpenShiftProvider:
-		defaults, err := provider.LoadDefaults(o.OpenShiftServiceAccount, o.OpenShiftCAs, o.OpenShiftSAR, o.OpenShiftSARByHost, o.OpenShiftDelegateURLs)
+		defaults, err := provider.LoadDefaults(o.OpenShiftServiceAccount, o.OpenShiftSAR, o.OpenShiftSARByHost, o.OpenShiftDelegateURLs)
 		if err != nil {
 			return err
 		}

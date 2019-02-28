@@ -34,7 +34,7 @@ type OpenShiftProvider struct {
 	*providers.ProviderData
 
 	ReviewURL *url.URL
-	Client    *http.Client
+	ReviewCAs []string
 
 	AuthenticationOptions DelegatingAuthenticationOptions
 	AuthorizationOptions  DelegatingAuthorizationOptions
@@ -45,6 +45,14 @@ type OpenShiftProvider struct {
 	reviews       []string
 	paths         recordsByPath
 	hostreviews   map[string][]string
+}
+
+func (p *OpenShiftProvider) GetReviewCAs() []string {
+	return p.ReviewCAs
+}
+
+func (p *OpenShiftProvider) SetReviewCAs(cas []string) {
+	p.ReviewCAs = cas
 }
 
 func New() *OpenShiftProvider {
@@ -67,7 +75,7 @@ func (p *OpenShiftProvider) Bind(flags *flag.FlagSet) {
 
 // LoadDefaults accepts configuration and loads defaults from the environment, or returns an error.
 // The provider may partially initialize config for subsequent calls.
-func (p *OpenShiftProvider) LoadDefaults(serviceAccount string, caPaths []string, reviewJSON, reviewByHostJSON, resources string) (*providers.ProviderData, error) {
+func (p *OpenShiftProvider) LoadDefaults(serviceAccount string, reviewJSON, reviewByHostJSON, resources string) (*providers.ProviderData, error) {
 	if len(resources) > 0 {
 		paths, err := parseResources(resources)
 		if err != nil {
@@ -86,10 +94,6 @@ func (p *OpenShiftProvider) LoadDefaults(serviceAccount string, caPaths []string
 		return nil, err
 	}
 	p.hostreviews = hostreviews
-
-	if err := p.setCAandTransportProxy(caPaths); err != nil {
-		return nil, err
-	}
 
 	defaults := &providers.ProviderData{
 		Scope: "user:info user:check-access",
@@ -114,14 +118,9 @@ func (p *OpenShiftProvider) LoadDefaults(serviceAccount string, caPaths []string
 	return defaults, nil
 }
 
-// SetCA initializes the client used for connecting to the master.
-func (p *OpenShiftProvider) setCAandTransportProxy(paths []string) error {
-	if p.Client == nil {
-		p.Client = &http.Client{
-			Jar:       http.DefaultClient.Jar,
-			Transport: http.DefaultTransport,
-		}
-	}
+// newOpenShiftClient returns a client for connecting to the master.
+func (p *OpenShiftProvider) newOpenShiftClient() (*http.Client, error) {
+	paths := p.GetReviewCAs()
 	//defaults
 	capaths := []string{"/var/run/secrets/kubernetes.io/serviceaccount/ca.crt"}
 	system_roots := true
@@ -131,15 +130,18 @@ func (p *OpenShiftProvider) setCAandTransportProxy(paths []string) error {
 	}
 	pool, err := util.GetCertPool(capaths, system_roots)
 	if err != nil {
-		return err
+		return nil, err
 	}
-	p.Client.Transport = &http.Transport{
-		Proxy: http.ProxyFromEnvironment,
-		TLSClientConfig: &tls.Config{
-			RootCAs: pool,
+
+	return &http.Client{
+		Jar: http.DefaultClient.Jar,
+		Transport: &http.Transport{
+			Proxy: http.ProxyFromEnvironment,
+			TLSClientConfig: &tls.Config{
+				RootCAs: pool,
+			},
 		},
-	}
-	return nil
+	}, nil
 }
 
 // encodeSARWithScope adds a "scopes" array to the SAR if it does not have one already, and outputs
@@ -385,8 +387,14 @@ func (p *OpenShiftProvider) GetEmailAddress(s *providers.SessionState) (string, 
 		log.Printf("failed building request %s", err)
 		return "", fmt.Errorf("unable to build request to get user email info: %v", err)
 	}
+
+	client, err := p.newOpenShiftClient()
+	if err != nil {
+		return "", err
+	}
+
 	req.Header.Set("Authorization", fmt.Sprintf("Bearer %s", s.AccessToken))
-	json, err := request(p.Client, req)
+	json, err := request(client, req)
 	if err != nil {
 		return "", fmt.Errorf("unable to retrieve email address for user from token: %v", err)
 	}
@@ -411,6 +419,11 @@ func (p *OpenShiftProvider) ReviewUser(name, accessToken, host string) error {
 		tocheck = append(tocheck, p.reviews...)
 	}
 
+	client, err := p.newOpenShiftClient()
+	if err != nil {
+		return err
+	}
+
 	for _, review := range tocheck {
 		req, err := http.NewRequest("POST", p.ReviewURL.String(), bytes.NewBufferString(review))
 		if err != nil {
@@ -419,7 +432,7 @@ func (p *OpenShiftProvider) ReviewUser(name, accessToken, host string) error {
 		}
 		req.Header.Set("Content-Type", "application/json")
 		req.Header.Set("Authorization", fmt.Sprintf("Bearer %s", accessToken))
-		json, err := request(p.Client, req)
+		json, err := request(client, req)
 		if err != nil {
 			return err
 		}
@@ -441,9 +454,11 @@ func (p *OpenShiftProvider) Redeem(redeemURL *url.URL, redirectURL, code string)
 		err = errors.New("missing code")
 		return
 	}
-	client := p.Client
-	if client == nil {
-		client = http.DefaultClient
+
+	client, caErr := p.newOpenShiftClient()
+	if caErr != nil {
+		err = caErr
+		return
 	}
 
 	params := url.Values{}
@@ -509,8 +524,12 @@ func (p *OpenShiftProvider) GetLoginURL() (*url.URL, error) {
 	if !emptyURL(p.ConfigLoginURL) {
 		return p.ConfigLoginURL, nil
 	}
+	client, err := p.newOpenShiftClient()
+	if err != nil {
+		return nil, err
+	}
 
-	loginURL, _, err := discoverOpenShiftOAuth(p.Client)
+	loginURL, _, err := discoverOpenShiftOAuth(client)
 	return loginURL, err
 }
 
@@ -518,8 +537,12 @@ func (p *OpenShiftProvider) GetRedeemURL() (*url.URL, error) {
 	if !emptyURL(p.ConfigRedeemURL) {
 		return p.ConfigRedeemURL, nil
 	}
+	client, err := p.newOpenShiftClient()
+	if err != nil {
+		return nil, err
+	}
 
-	_, redeemURL, err := discoverOpenShiftOAuth(p.Client)
+	_, redeemURL, err := discoverOpenShiftOAuth(client)
 	return redeemURL, err
 }
 
