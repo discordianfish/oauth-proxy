@@ -1,6 +1,8 @@
-FROM openshift/origin-release:golang-1.10 AS build
-COPY . /go/src/github.com/openshift/oauth-proxy
-RUN cd /go/src/github.com/openshift/oauth-proxy && go build .
-FROM centos:7
-COPY --from=build /go/src/github.com/openshift/oauth-proxy/oauth-proxy /bin/oauth-proxy
-ENTRYPOINT ["/bin/oauth-proxy"]
+FROM registry.svc.ci.openshift.org/openshift/release:golang-1.10 AS builder
+WORKDIR  /go/src/github.com/openshift/oauth-proxy
+COPY . .
+RUN go build .
+
+FROM registry.svc.ci.openshift.org/openshift/origin-v4.0:base
+COPY --from=builder /go/src/github.com/openshift/oauth-proxy/oauth-proxy /usr/bin/oauth-proxy
+ENTRYPOINT ["/usr/bin/oauth-proxy"]
