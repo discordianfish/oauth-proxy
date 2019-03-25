@@ -204,6 +204,7 @@ func (o *Options) Validate(p providers.Provider) error {
 			msgs = append(msgs, fmt.Sprintf(
 				"error parsing upstream=%q %s",
 				upstreamURL, err))
+			continue
 		}
 		if upstreamURL.Path == "" {
 			upstreamURL.Path = "/"
